@@ -259,7 +259,9 @@ dukaan-dost/
 ├── api/
 │   └── main.py              # FastAPI, incl. mid-call campaign endpoint
 ├── dashboard/               # judge view: reasoning trace, learning curve
-│   └── soundbox.html        # merchant approval page, plays the script, Haan and Nahi buttons
+│   ├── index.html           # the six panel judge dashboard, plain HTML and vanilla JS
+│   ├── soundbox.html        # merchant approval page, plays the script, Haan and Nahi buttons
+│   └── learning.json        # exported learning series, written by scripts/run_campaigns.py
 ├── workflows/               # n8n JSON exports
 ├── world/
 │   └── outcomes.py          # THE SIMULATED WORLD, holds the hidden truth, never imported by the agent

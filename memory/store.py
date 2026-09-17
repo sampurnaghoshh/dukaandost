@@ -406,8 +406,13 @@ def learning_series(conn: sqlite3.Connection, merchant_id: str) -> list:
     return [dict(row) for row in rows]
 
 
-def export_learning(conn: sqlite3.Connection, merchant_id: str, path: str) -> dict:
-    """Writes the series where the dashboard can chart it without touching SQLite."""
+def export_learning(conn: sqlite3.Connection, merchant_id: str, path: str,
+                    extra: dict | None = None) -> dict:
+    """Writes the series where the dashboard can chart it without touching SQLite.
+
+    `extra` carries the evaluation overlay, which is how the hidden truth reaches the chart
+    without any agent module ever importing the simulated world.
+    """
     series = learning_series(conn, merchant_id)
     payload = {
         "merchant_id": merchant_id,
@@ -415,6 +420,7 @@ def export_learning(conn: sqlite3.Connection, merchant_id: str, path: str) -> di
         "campaigns": len(series),
         "series": series,
     }
+    payload.update(extra or {})
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as handle:
         json.dump(payload, handle, indent=2, ensure_ascii=False)

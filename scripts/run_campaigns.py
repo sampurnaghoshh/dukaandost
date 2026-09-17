@@ -94,7 +94,8 @@ def run(merchant_id: str, campaigns: int, memory_path: str | None,
                                              - _truth(chosen["estimates"]["offer_level"])),
             })
 
-        payload = store.export_learning(memory, merchant_id, LEARNING_PATH)
+        payload = store.export_learning(memory, merchant_id, LEARNING_PATH,
+                                        extra={"rows": rows})
         payload["rows"] = rows
         return payload
     finally:

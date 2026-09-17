@@ -431,6 +431,11 @@ def normalise(candidate: GeneratedCandidate, triage_result: dict, index: int,
         "rationale": candidate.rationale,
         "source": "llm",
         "generation_index": index,
+        # Since Step 4 the model is told not to choose a depth. Older cached answers still
+        # carry one, so it is passed through for the dashboard to show as a contrast, and
+        # is never used to price anything.
+        "model_suggested_level": (candidate.offer_level.upper()
+                                  if candidate.offer_level else None),
         "target_segment": segment,
         # No percentage and no level. simulate.py prices LOW, MEDIUM and HIGH and keeps the
         # best one that survives the guardrails, so the depth is never the model's to choose.

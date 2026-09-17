@@ -2,6 +2,199 @@
 
 Build log for Dukaan Dost. Newest step at the top.
 
+## Step 6: judge dashboard (Fri 18 Sep, afternoon)
+
+Status: **done, 143 tests pass, one URL, no build step, fully offline.**
+
+### What it is
+
+`dashboard/index.html`, served by FastAPI at **`/`** and `/dashboard`. Plain HTML, one
+`<style>` block, one `<script>` block, vanilla JS. No npm, no React, no CDN, no bundler.
+There is a test asserting the page contains no `http://`, no `https://`, no `import` and no
+`require(`, because a page that reaches for a CDN is a page that dies on venue wifi.
+
+```bash
+uvicorn api.main:app --reload
+# then open http://localhost:8000
+```
+
+That is the whole setup. The page fetches `/dashboard/state` once, renders, and polls every
+two seconds, so it updates live while someone talks over it.
+
+### One endpoint behind it
+
+`GET /dashboard/state` returns everything all six panels need in a single call. The page is
+a renderer and holds no logic of its own beyond formatting.
+
+Triage across eighteen months of ledger takes well over a second, and generation reads the
+LLM cache, so recomputing both every two seconds would have made the page crawl. They are
+cached and invalidated on the **count of measured campaigns**, which is precisely when the
+learned uplift moves and the grid genuinely needs redrawing. A test asserts a second poll
+returns in under a second.
+
+### The six panels
+
+1. **Tonight's decision.** Merchant, the three signals as plain sentences rather than JSON,
+   the opportunity in rupees a month at stake, and the verdict. The silent path is built as
+   a first class outcome: `silent_reason` comes back in the payload and the panel prints
+   **NO CALL TONIGHT** in a deliberate amber box with the sentence "the agent stays silent,
+   which is what it does most nights". There is a test for the silent state specifically.
+2. **The reasoning trace.** Every candidate with its action and segment in words ("regulars
+   who stopped coming", not `{"kind": "lapsed_regulars"}`), the LOW MEDIUM HIGH profit grid,
+   refused rows struck through with a short reason, and the line underneath: *the model
+   proposes who and what, code prices how deep*.
+3. **The call.** The filled Hindi script at 23px, the merchant's reply, the outcome, and a
+   Play button whenever cached audio exists.
+4. **Dispatch.** Ten treated cards with the real personalised Hindi, and two control cards
+   greyed and dashed reading "no message, on purpose. This is how we know it was us." The
+   holdout is shown rather than described.
+5. **Measurement.** Treated conversion, control conversion, then the subtraction written out
+   as an equation, and the recovered revenue with "over 30 days" in the label. Nothing
+   modelled appears in this panel.
+6. **Learning.** Inline SVG, hand drawn from the `/learning` series, no chart library. The
+   believed uplift climbs as a green line, the hidden truth sits as a dashed red reference,
+   and each campaign's measured lift is a point. **Campaign two is plotted below the zero
+   line in red and labelled "measured below zero".** Hiding it was never an option: it is
+   the most honest thing on the page.
+
+### The number in the brief, and when it is true
+
+The spec says the winback row should read **148.03, 186.62, 107.02 with MEDIUM chosen**. It
+does, and a test pins those three figures to two decimals. **That is the day one reading,
+against empty campaign memory**, which is what a judge sees when the demo starts.
+
+Worth knowing before Saturday: after six campaigns have been measured the same row reads
+**302.71, 397.16, 278.89**, still peaking at MEDIUM. The grid is not static. It rises
+because the agent has learned that this shop's customers respond 1.95 times as hard as the
+priors assumed, and the panel would be lying if it did not move. So the demo order matters:
+
+- open the dashboard on fresh memory to show the day one grid, or
+- run `python -m scripts.run_campaigns` first to have a full learning curve in panel six,
+  and expect panel two to show the larger, learned numbers.
+
+`rm data/memory.db` resets to day one.
+
+### How the hidden truth reaches the chart without contaminating the agent
+
+Panel six needs the reference line, and the hidden truth lives in `world/outcomes.py`, which
+**no module the agent uses may import**. So it does not import it. `scripts/run_campaigns.py`
+writes the evaluation overlay into `dashboard/learning.json`, and `api/main.py` reads that
+**file**. A test asserts the string `world.outcomes` does not appear anywhere in
+`api/main.py`, and another asserts a corrupt export file leaves the page serving 200 with
+`hidden_truth: null` rather than taking the dashboard down mid pitch.
+
+### The model's preferred level, and why it is usually not marked
+
+The brief asks for the model's preferred level and the simulator's chosen level marked
+differently. The simulator's choice is marked with a solid green cell. The model's
+preference is marked with a dashed blue outline **when there is one**, and with the current
+prompt there is not: since Step 4 the model is told not to choose a depth at all, and the
+live cached answer carries no `offer_level` field. Rather than invent one, the legend says
+so in words: *the model no longer proposes a depth at all, so there is nothing of its own to
+mark here*. Older cached answers do carry a level, and `model_suggested_level` is passed
+through untouched so those render with the dashed outline. It is never used to price
+anything.
+
+### Decisions made
+
+1. **Sentences, not tables, except the grid.** The brief said one idea per panel read from
+   six feet, so the payload ships pre written sentences like "chai travels alone, attaching
+   a snack 6 times in a hundred against 11 for filter_coffee" rather than making the page
+   assemble prose from fields.
+2. **The page never calls anything that mutates.** `/dashboard/state` is read only, so a
+   poll cannot place a call or launch a campaign by accident while it sits open on a
+   projector.
+3. **Every panel renders its own empty state.** Four of the six have nothing to show before
+   a campaign runs, and a test checks each one returns cleanly rather than throwing.
+4. **The page escapes everything it prints.** Customer ids, Hindi bodies and model written
+   titles all go through an escaper before reaching `innerHTML`.
+
+### Not done, by instruction
+
+No n8n, no Cognee, no learning curve in the soundbox page, no real telephony. `.env` was
+never opened, printed or edited. No network calls at all this step. Nothing pushed.
+
+### The dashboard rendered offline, every panel
+
+```
+  GET /dashboard serves the page                 ok
+  GET /dashboard/state                           ok
+
+PANEL 1  Tonight's decision
+  Ramesh Tea Stall, 2026-09-17
+  [lapsed regulars] 12 regulars have stopped coming, silent between 22 and 25 days
+      Rs 9460 a month
+  [off peak gap] Tuesday 14:00 to 17:00 runs 85 percent below the same hours on other days
+      Rs 506 a month
+  [basket affinity gap] chai travels alone, attaching a snack 6 times in a hundred against 11 for filter_coffee
+      Rs 1436 a month
+  opportunity Rs 9848 a month, 29 percent of revenue, decision: CALL
+  panel 1 has all three signals                  ok
+
+PANEL 2  Reasoning trace
+  candidates from the llm
+  candidate                                    LOW    MEDIUM      HIGH  chosen
+  lapsed_winback_lapsed_regulars_1         302.71    397.16    278.89   MEDIUM
+  offpeak_fill_offpeak_slot_2               -4.09x    -8.23x   -24.66x  REFUSED
+      refused: LOW: negative expected profit: -4.09 rupees over 30 days
+  attach_upsell_anchor_buyers_3           -103.00x  -236.06x  -522.64x  REFUSED
+      refused: LOW: negative expected profit: -103.00 rupees over 30 days
+  offpeak_fill_offpeak_slot_4               -4.09x    -8.23x   -24.66x  REFUSED
+      refused: LOW: negative expected profit: -4.09 rupees over 30 days
+  attach_upsell_anchor_buyers_5           -103.00x  -236.06x  -522.64x  REFUSED
+      refused: LOW: negative expected profit: -103.00 rupees over 30 days
+  note: the model proposes who and what, code prices how deep
+  winback still peaks at MEDIUM after learning   ok
+  refused candidates carry a reason              ok
+
+PANEL 3  The call
+  script: नमस्ते Ramesh जी, आपके 12 पुराने रेगुलर कस्टमर आना बंद कर गए हैं, जिससे आपको हर महीने करीब ₹9,460 का नुकसान हो रहा है। अगर हम उनके पास एक 20% chhoot chai pe भेजें तो कैसा रहेगा? हम सिर्फ 10 लोगों को ही मैसेज करेंगे, बाकी 2 को बाहर रखेंगे ताकि हमें पता चले कि ऑफर सच में काम कर रहा है या नहीं। क्या मैं भेज दूँ?
+  reply : Haan, bhej do.  ->  approved via button
+  call panel settled with audio                  ok
+
+PANEL 4  Dispatch
+  10 treated, 2 held back
+  C0073  नमस्ते C0073, हम आपको Ramesh Tea Stall में वापस देखकर बहुत खुश हैं। आपके लिए एक खास 20% chhoot chai pe तैयार है।
+  C0080  नमस्ते C0080, हम आपको Ramesh Tea Stall में वापस देखकर बहुत खुश हैं। आपके लिए एक खास 20% chhoot chai pe तैयार है।
+  C0111  नमस्ते C0111, हम आपको Ramesh Tea Stall में वापस देखकर बहुत खुश हैं। आपके लिए एक खास 20% chhoot chai pe तैयार है।
+  C0268  (control, no message: held back, never messaged)
+  C0329  (control, no message: held back, never messaged)
+  control group has no message                   ok
+
+PANEL 5  Measurement
+  treated 4 of 10 = 40 percent
+  control 0 of 2 = 0 percent
+  lift = 40 minus 0 = 40 percent, recovered Rs 2238 over 30 days
+  lift is the subtraction                        ok
+
+PANEL 6  Learning
+  no    believed   measured      truth
+  1       0.1400     0.2000       0.30
+  2       0.1448    -0.2000       0.30
+  3       0.1533     0.0000       0.30
+  4       0.1868     0.5000       0.30
+  5       0.2252     0.5000       0.30
+  6       0.2543     0.4000       0.30
+  7       0.2647     0.4000        n/a
+  headline: this shop measures 1.95 times as responsive as the priors assumed
+  six campaigns charted                          ok
+  hidden truth present for the reference line    ok
+  a negative measurement is present and not hidden ok
+
+ALL DASHBOARD CHECKS PASSED OFFLINE
+```
+
+### Test suite
+
+```
+$ python -m pytest tests/ -q
+143 passed in 32.65s
+```
+
+**Next: Step 7, n8n orchestration.**
+
+---
+
 ## Step 5: holdout, measurement, learning (Fri 18 Sep, midday)
 
 Status: **done, 124 tests pass, the whole loop runs offline, the agent learns.**

@@ -591,3 +591,286 @@ def _reply_payload(payload: dict) -> dict:
         if payload.get("note"):
             out["note"] = payload["note"]
     return out
+
+
+# --------------------------------------------------------------------------
+# The judge dashboard
+#
+# One page, one fetch, polled every two seconds. Everything it needs comes from
+# /dashboard/state so the page stays a renderer and nothing more.
+#
+# Triage over eighteen months of ledger takes well over a second, and generation reads the
+# LLM cache, so recomputing both on every poll would make the page crawl. They are cached
+# here and invalidated when the number of measured campaigns changes, which is exactly when
+# the learned uplift moves and the grid genuinely needs redrawing.
+# --------------------------------------------------------------------------
+
+DASHBOARD_PATH = os.path.join(ledger.REPO_ROOT, "dashboard", "index.html")
+LEARNING_EXPORT_PATH = os.path.join(ledger.REPO_ROOT, "dashboard", "learning.json")
+_ANALYSIS_CACHE: dict = {}
+
+
+def _segment_label(segment: dict | None) -> str:
+    """A target segment as a judge would say it, not as JSON."""
+    segment = segment or {}
+    kind = segment.get("kind")
+    if kind == "lapsed_regulars":
+        return "regulars who stopped coming"
+    if kind == "offpeak_slot":
+        hours = segment.get("hours") or []
+        if hours:
+            return ("%s %02d:00 to %02d:00"
+                    % (segment.get("weekday_name", "one weekday"), hours[0], hours[-1] + 1))
+        return segment.get("weekday_name", "a quiet weekday slot")
+    if kind == "anchor_buyers":
+        return "%s buyers" % segment.get("anchor_item", "anchor")
+    return kind or "unknown segment"
+
+
+def _analysis(merchant_id: str, version: int) -> dict:
+    """Triage, generation and the priced grid. Cached against the measured campaign count."""
+    key = (merchant_id, version)
+    if key in _ANALYSIS_CACHE:
+        return _ANALYSIS_CACHE[key]
+
+    conn = ledger.connect()
+    memory = store.connect()
+    try:
+        when = ledger.data_as_of(conn, merchant_id)
+        triage_result = triage.score(merchant_id, when, conn=conn)
+        generated = None
+        ranking = None
+        if triage_result["worth_a_call"]:
+            generated = run_night.generate_candidates(conn, merchant_id, triage_result)
+            ranking = simulate.rank(merchant_id, generated["candidates"], triage_result,
+                                    today=when, conn=conn, memory=memory)
+    finally:
+        conn.close()
+        memory.close()
+
+    _ANALYSIS_CACHE.clear()
+    _ANALYSIS_CACHE[key] = {"triage": triage_result, "generated": generated,
+                            "ranking": ranking}
+    return _ANALYSIS_CACHE[key]
+
+
+def _tonight(triage_result: dict) -> dict:
+    signals = triage_result["signals"]
+    lapsed = signals["lapsed_regulars"]
+    rows = []
+    if lapsed["count"]:
+        gaps = [row["days_since_last_visit"] for row in lapsed["detail"]]
+        rows.append({
+            "kind": "lapsed regulars",
+            "sentence": ("%d regulars have stopped coming, silent between %d and %d days"
+                         % (lapsed["count"], min(gaps), max(gaps))),
+            "monthly_value": lapsed["value_at_risk_monthly"],
+            "counts_in_full": True,
+        })
+    for gap in signals["offpeak_gaps"]["detail"]:
+        rows.append({
+            "kind": "off peak gap",
+            "sentence": ("%s %02d:00 to %02d:00 runs %.0f percent below the same hours on "
+                         "other days" % (gap["weekday_name"], gap["hours"][0],
+                                         gap["hours"][-1] + 1, gap["shortfall_pct"])),
+            "monthly_value": gap["monthly_upside"],
+            "counts_in_full": False,
+        })
+    for gap in signals["affinity_gaps"]["detail"]:
+        rows.append({
+            "kind": "basket affinity gap",
+            "sentence": ("%s travels alone, attaching a snack %.0f times in a hundred "
+                         "against %.0f for %s"
+                         % (gap["anchor_item"], 100 * gap["attach_rate"],
+                            100 * gap["benchmark_attach_rate"], gap["benchmark_item"])),
+            "monthly_value": gap["monthly_upside"],
+            "counts_in_full": False,
+        })
+    return {
+        "decision": triage_result["decision"],
+        "worth_a_call": triage_result["worth_a_call"],
+        "opportunity_score": triage_result["opportunity_score"],
+        "revenue_share": triage_result["revenue_share"],
+        "thresholds": triage_result["thresholds"],
+        "signals": rows,
+        "evidence": triage_result["evidence"],
+        "silent_reason": (None if triage_result["worth_a_call"] else
+                          "Nothing at this shop is far enough from its own norm tonight. "
+                          "The agent stays silent, which is what it does most nights."),
+    }
+
+
+def _latest_call() -> dict | None:
+    """The most recently opened soundbox call, settled or not."""
+    if not local_soundbox.PENDING:
+        return None
+    call = sorted(local_soundbox.PENDING.values(), key=lambda row: row["started_at"])[-1]
+    brief: Brief = call["brief"]
+    decision = call["decision"]
+    heard = ""
+    for turn in call["transcripts"]:
+        if turn.get("text"):
+            heard = turn["text"]
+    return {
+        "call_id": call["call_id"],
+        "merchant_name": brief.merchant_name,
+        "title": brief.title,
+        "script": brief.script,
+        "script_source": brief.script_source,
+        "transcript": (decision.transcript if decision else heard),
+        "outcome": (decision.outcome if decision else "awaiting_reply"),
+        "approved": (decision.approved if decision else None),
+        "via": (decision.modifications.get("via") if decision else None),
+        "settled": decision is not None,
+        "has_audio": bool(call["audio"]),
+        "audio_url": ("/soundbox/audio?call_id=%s" % call["call_id"]
+                      if call["audio"] else None),
+        "numbers": json.loads(brief.numbers.model_dump_json()),
+    }
+
+
+def _latest_campaign(memory, merchant_id: str) -> dict | None:
+    row = memory.execute(
+        "SELECT * FROM campaigns WHERE merchant_id = ? ORDER BY sequence DESC LIMIT 1",
+        (merchant_id,)).fetchone()
+    if row is None:
+        return None
+
+    campaign_id = row["campaign_id"]
+    assignment = store.assignments(memory, campaign_id)
+    bodies = {message["customer_id"]: message
+              for message in store.messages(memory, campaign_id)}
+
+    treated = [{"customer_id": customer_id,
+                "body": bodies.get(customer_id, {}).get("body", ""),
+                "status": bodies.get(customer_id, {}).get("status", "not rendered")}
+               for customer_id in assignment["treated"]]
+    control = [{"customer_id": customer_id, "body": None,
+                "status": "held back, never messaged"}
+               for customer_id in assignment["control"]]
+
+    measurement = memory.execute("SELECT * FROM measurements WHERE campaign_id = ?",
+                                 (campaign_id,)).fetchone()
+    return {
+        "campaign_id": campaign_id,
+        "sequence": row["sequence"],
+        "offer_level": row["offer_level"],
+        "discount_pct": row["discount_pct"],
+        "offer_applies_to": row["offer_applies_to"],
+        "status": row["status"],
+        "treated": treated,
+        "control": control,
+        "channel": "dashboard_stub",
+        "production_channel": "whatsapp_business_api",
+        "dispatch_note": ("rendered and logged, not sent. WhatsApp Business API is the "
+                          "production path and needs business verification plus template "
+                          "approval."),
+        "measurement": dict(measurement) if measurement else None,
+        "horizon_days": simulate.VALUE_HORIZON_DAYS,
+    }
+
+
+def _learning(memory, merchant_id: str) -> dict:
+    series = store.learning_series(memory, merchant_id)
+    scale = store.learned_response_scale(
+        memory, merchant_id, simulate.PRIOR_OFFER_UPLIFT,
+        baseline_rate=store.last_baseline_rate(memory, merchant_id))
+
+    # The hidden truth reaches the chart only through the evaluation export written by
+    # scripts/run_campaigns.py. No module the agent uses imports the simulated world, and
+    # this one reads a file rather than that module, so the separation holds here too.
+    overlay = {}
+    if os.path.exists(LEARNING_EXPORT_PATH):
+        try:
+            with open(LEARNING_EXPORT_PATH, encoding="utf-8") as handle:
+                exported = json.load(handle)
+            overlay = {row["sequence"]: row for row in exported.get("rows", [])}
+        except (ValueError, KeyError, TypeError):
+            overlay = {}
+
+    truths = [row.get("hidden_truth") for row in overlay.values()
+              if row.get("hidden_truth") is not None]
+    for row in series:
+        extra = overlay.get(row["sequence"], {})
+        row["hidden_truth"] = extra.get("hidden_truth")
+        row["belief_error_vs_truth"] = extra.get("belief_error_vs_truth")
+
+    headline = None
+    if series:
+        headline = (("this shop measures %.2f times as responsive as the priors assumed"
+                     % scale["scale"]) if scale["source"] == "MEASURED"
+                    else "no campaign measured yet, the priors stand unchanged")
+    return {
+        "campaigns": len(series),
+        "series": series,
+        "scale": scale,
+        "hidden_truth": (sum(truths) / len(truths)) if truths else None,
+        "priors": simulate.PRIOR_OFFER_UPLIFT,
+        "headline": headline,
+    }
+
+
+@app.get("/dashboard/state")
+def get_dashboard_state(merchant_id: str = DEFAULT_MERCHANT) -> dict:
+    """Everything the judge page renders, in one call. Read only, safe to poll."""
+    memory = store.connect()
+    try:
+        version = memory.execute("SELECT COUNT(*) FROM measurements WHERE merchant_id = ?",
+                                 (merchant_id,)).fetchone()[0]
+        analysis = _analysis(merchant_id, version)
+        campaign_state = _latest_campaign(memory, merchant_id)
+        learning = _learning(memory, merchant_id)
+    finally:
+        memory.close()
+
+    triage_result = analysis["triage"]
+    ranking = analysis["ranking"]
+    generated = analysis["generated"]
+
+    reasoning = {
+        "candidate_source": (generated or {}).get("source"),
+        "offer_levels": simulate.OFFER_LEVEL_DISCOUNT_PCT,
+        "note": "the model proposes who and what, code prices how deep",
+        "dropped": (generated or {}).get("dropped", []),
+        "grid": [],
+        "recommended_id": None,
+    }
+    if ranking:
+        reasoning["recommended_id"] = (ranking["recommended"] or {}).get("candidate_id")
+        for row in ranking["level_grid"]:
+            reasoning["grid"].append({
+                "candidate_id": row["candidate_id"],
+                "title": row["title"],
+                "action_type": row["action_type"],
+                "segment": _segment_label(row.get("target_segment")),
+                "rationale": row.get("rationale"),
+                "source": row["source"],
+                "model_suggested_level": row.get("model_suggested_level"),
+                "chosen_level": row["chosen_level"],
+                "accepted": row["accepted"],
+                "levels": row["levels"],
+                "rejections": row.get("rejections", []),
+            })
+
+    return {
+        "generated_at": datetime.now().isoformat(timespec="seconds"),
+        "llm_mode": llm.mode(),
+        "merchant": {
+            "merchant_id": merchant_id,
+            "name": triage_result["merchant_name"],
+            "today": triage_result["today"],
+            "baseline": triage_result["merchant_baseline"],
+        },
+        "tonight": _tonight(triage_result),
+        "reasoning": reasoning,
+        "call": _latest_call(),
+        "campaign": campaign_state,
+        "learning": learning,
+    }
+
+
+@app.get("/dashboard", response_class=HTMLResponse)
+@app.get("/", response_class=HTMLResponse)
+def get_dashboard() -> HTMLResponse:
+    with open(DASHBOARD_PATH, encoding="utf-8") as handle:
+        return HTMLResponse(handle.read())
