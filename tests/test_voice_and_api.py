@@ -232,11 +232,16 @@ def test_call_then_button_then_launch_then_measure(client):
     campaign_id = payload["campaign_id"]
     assert payload["treated_count"] + payload["holdout_count"] == 12
 
+    # Step 5 made /measure real. It used to answer not_ready from a stub.
     measured = client.post("/measure", json={"campaign_id": campaign_id,
                                              "merchant_id": MERCHANT_ID})
     assert measured.status_code == 200
-    assert measured.json()["status"] == "not_ready"
-    assert measured.json()["campaign_known"] is True
+    body = measured.json()
+    assert body["status"] == "measured"
+    measurement = body["measurement"]
+    assert measurement["treated_n"] + measurement["control_n"] == 12
+    assert measurement["lift"] == pytest.approx(
+        measurement["treated_rate"] - measurement["control_rate"])
 
 
 def test_declining_launches_nothing(client):

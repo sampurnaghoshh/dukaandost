@@ -245,6 +245,8 @@ dukaan-dost/
 │   ├── fixtures.py          # placeholder candidates, replaced by generate.py in Step 3
 │   ├── holdout.py           # random assignment, 85/15
 │   ├── measure.py           # lift = treated minus control
+│   ├── campaign.py          # one campaign: assign, predict, dispatch, observe, measure
+│   ├── dispatch.py          # renders per customer Hindi messages, treated only
 │   ├── speech.py            # Sarvam text to speech and speech to text, cached
 │   ├── llm.py               # Sarvam chat completions, record and replay
 │   └── run_night.py         # one nightly cycle end to end, CLI entry point
@@ -259,8 +261,11 @@ dukaan-dost/
 ├── dashboard/               # judge view: reasoning trace, learning curve
 │   └── soundbox.html        # merchant approval page, plays the script, Haan and Nahi buttons
 ├── workflows/               # n8n JSON exports
+├── world/
+│   └── outcomes.py          # THE SIMULATED WORLD, holds the hidden truth, never imported by the agent
 ├── scripts/
-│   └── check_data.py        # validates the generated ledger, exits non-zero on failure
+│   ├── check_data.py        # validates the generated ledger, exits non-zero on failure
+│   └── run_campaigns.py     # six campaigns end to end, writes the learning curve
 ├── tests/                   # pytest
 └── logs/                    # decision logs the dashboard reads (gitignored)
 ```

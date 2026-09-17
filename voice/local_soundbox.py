@@ -83,11 +83,26 @@ PUNCTUATION = set(".,!?;:\"'`()[]{}<>/\\|_=+*&^~@#$-"
                   + "".join(chr(code) for code in (0x0964, 0x0965, 0x2026, 0x2013, 0x2014)))
 
 
+# Chandrabindu and anusvara both nasalise, and saaras:v3 picks between them unpredictably:
+# a round trip through Sarvam on 18 Sep returned "haan" with chandrabindu one time and with
+# anusvara the next, for the same word. Folding one onto the other means the phrase list
+# needs a single spelling rather than every combination.
+NASAL_FOLD = {"ँ": "ं"}   # chandrabindu to anusvara
+
+
 def _normalise(text: str) -> str:
-    """Lower cased, punctuation flattened to spaces, so a full stop cannot defeat a match."""
-    kept = [" " if (character in PUNCTUATION or character.isspace()) else character
-            for character in (text or "").lower()]
+    """Lower cased, punctuation flattened, nasal marks folded, so a danda cannot beat a match."""
+    kept = []
+    for character in (text or "").lower():
+        if character in PUNCTUATION or character.isspace():
+            kept.append(" ")
+        else:
+            kept.append(NASAL_FOLD.get(character, character))
     return " ".join("".join(kept).split())
+
+
+def _fold(phrase: str) -> str:
+    return "".join(NASAL_FOLD.get(character, character) for character in phrase)
 
 
 def _contains_phrase(haystack: str, phrase: str) -> bool:
@@ -114,8 +129,8 @@ def classify_reply(transcript: str) -> dict:
         return {"outcome": "unclear", "matched": None,
                 "reason": "nothing was transcribed"}
 
-    approvals = [phrase for phrase in APPROVE_PHRASES if _contains_phrase(text, phrase)]
-    declines = [phrase for phrase in DECLINE_PHRASES if _contains_phrase(text, phrase)]
+    approvals = [phrase for phrase in APPROVE_PHRASES if _contains_phrase(text, _fold(phrase))]
+    declines = [phrase for phrase in DECLINE_PHRASES if _contains_phrase(text, _fold(phrase))]
 
     if approvals and declines:
         longest_yes = max(approvals, key=len)

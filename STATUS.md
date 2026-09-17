@@ -2,6 +2,244 @@
 
 Build log for Dukaan Dost. Newest step at the top.
 
+## Step 5: holdout, measurement, learning (Fri 18 Sep, midday)
+
+Status: **done, 124 tests pass, the whole loop runs offline, the agent learns.**
+
+### 1. What saaras:v3 actually returns for spoken Hindi
+
+Checked properly rather than guessed. No microphone was needed: `bulbul:v3` spoke each
+phrase, and that audio went straight back into `saaras:v3`. Real synthesis in, real
+transcription out, over the live API on 18 Sep 2026.
+
+| sent to TTS | returned by STT |
+|---|---|
+| `हाँ` | `हाँ।` |
+| `हां भेज दो` | `हाँ, भेज दो।` |
+| `जी हाँ` | `जी हां।` |
+| `नहीं` | `नहीं।` |
+| `मत भेजो` | `मत भेजो।` |
+| `ठीक है भेज दीजिए` | `ठीक है, भेज दीजिए।` |
+
+**The answer is Devanagari, with punctuation, never romanised.** Default `transcribe` mode
+normalises and adds a comma and a danda. Romanised output is available, but it is a
+different mode (`translit`), not what you get by default.
+
+**The trap, and it is a real one:** look at rows one and three. The same spoken word came
+back with a **chandrabindu** once and an **anusvara** the next time. Those are two different
+code points, U+0901 and U+0902, so a naive phrase list matches one spelling and silently
+misses the other. The classifier now folds chandrabindu onto anusvara before matching, so
+one spelling in the list covers both. All eight approval forms and five refusal forms in the
+tests pass, in Devanagari, romanised and mixed.
+
+This sits on top of the Step 4 finding that Devanagari vowel signs are not `isalnum()`.
+Indic text has now bitten this codebase twice in two different ways.
+
+### 2. The holdout
+
+`core/holdout.py` assigns by hashing the campaign id, customer id and seed, rather than by
+shuffling a list. Hashing means a customer's arm can be recomputed from nothing at any
+later point, which is what makes an n8n retry safe: the same campaign always produces the
+same split, in any order the segment arrives, on any machine.
+
+Tested: deterministic, order independent, disjoint, exhaustive, exactly 85 and 15, and a
+different campaign gives a different split so nobody is held back forever. `validate()`
+refuses to persist a broken assignment rather than writing it and hoping.
+
+Assignments live in `data/memory.db`, a **separate database from the ledger**. The ledger is
+the shop's evidence and is opened read only everywhere. What the agent did is our record,
+and a bug in the agent must not be able to corrupt the evidence it reasons about.
+
+### 3. Dispatch
+
+`core/dispatch.py` renders one Hindi message per treated customer from the chosen
+candidate's template, with every figure filled by code. Rows land in the `messages` table
+for the dashboard. **The control group is never rendered and never written**, enforced at
+dispatch, because not messaging them is the entire experiment.
+
+**Nothing is sent. WhatsApp Business API is the production path**, and it needs business
+verification plus template approval, which is days rather than hours. That is a decision,
+not an omission, and it gets said on stage.
+
+A test caught a defect worth keeping: the fixture template contains `{days_absent}`, and
+when the facts for a customer were missing the message rendered as *"Aapko Ramesh Tea Stall
+pe {days_absent} din se dekha nahi"*. Dispatch now blocks any message still carrying an
+unfilled placeholder and records the reason instead of sending it. Sending a customer a
+sentence full of curly braces is worse than sending nothing.
+
+### 4. The simulated world
+
+`world/outcomes.py`, in its own package, behind a box comment, **never imported by
+`triage.py`, `generate.py`, `simulate.py`, `measure.py`, `holdout.py` or `dispatch.py`**.
+There is a test asserting exactly that, because an agent that can read the answer key is
+not predicting anything and its learning curve would be a lie.
+
+The hidden truth, which the agent never sees:
+
+```
+TRUE_OFFER_UPLIFT         LOW 0.18   MEDIUM 0.30   HIGH 0.38
+TRUE_BASELINE_RETURN_RATE 0.06
+```
+
+One correction to the brief, which said to set the truth above "the 0.08 MEDIUM prior":
+0.08 is the **LOW** prior. `PRIOR_OFFER_UPLIFT` is LOW 0.08, MEDIUM 0.14, HIGH 0.20. Every
+hidden value is set clearly above its own level's prior, so the agent starts underestimating
+at every depth and has to be taught otherwise.
+
+Measurement is `core/measure.py` and it is subtraction:
+
+```
+lift = treated_returns / treated_n  -  control_returns / control_n
+```
+
+No model, no prior, no coefficient. It reports a negative lift when the treated group does
+worse, and there is a test for that too.
+
+### 5. Six campaigns, and what they show
+
+```
+Six campaigns, same twelve customers, same action, learning as it goes
+==============================================================================
+  no  level    believed  measured    treated   control    pred prof     actual
+  1   MEDIUM     0.1400    0.2000      2/10       0/2        186.62     364.33
+  2   MEDIUM     0.1448   -0.2000      3/10       1/2        194.81    -620.88
+  3   MEDIUM     0.1533    0.0000      5/10       1/2        209.14    -148.56
+  4   MEDIUM     0.1868    0.5000      5/10       0/2        265.60     857.12
+  5   MEDIUM     0.2252    0.5000      5/10       0/2        330.55    1001.66
+  6   MEDIUM     0.2543    0.4000      4/10       0/2        379.60     776.76
+
+  Belief against the hidden truth, which is the learning curve that matters:
+  no    believed      truth        error
+  1       0.1400     0.3000       0.1600
+  2       0.1448     0.3000       0.1552
+  3       0.1533     0.3000       0.1467
+  4       0.1868     0.3000       0.1132
+  5       0.2252     0.3000       0.0748
+  6       0.2543     0.3000       0.0457
+
+  The hidden truth for MEDIUM is 0.30. The agent never sees it.
+  Campaign 1 predicted 0.1400, off by 0.1600.
+  Campaign 6 predicted 0.2543, off by 0.0457.
+
+  first campaign uplift source:      PRIOR_OFFER_UPLIFT[MEDIUM] = 0.14, a named constant, replaced by measured lift a
+  last campaign uplift source:       MEASURED, 0.254: 0.14 prior times a measured response scale of 1.82, from 5 camp
+
+  Series written to dashboard\learning.json
+```
+
+**The believed uplift climbs monotonically toward the hidden 0.30, and the error falls from
+0.160 to 0.046.** Campaign one predicts from a hardcoded prior. Campaign six predicts from
+this shop's own customers.
+
+**The honest part, and it is the more interesting half of the story.** Look at the
+`measured` column: 0.20, then **-0.20**, then 0.00, then 0.50. A single campaign's measured
+lift is close to meaningless here, and the reason is arithmetic rather than bad luck.
+Fifteen percent of a twelve person cohort is a **two person control group**, and a rate
+estimated from two people can only be 0, 0.5 or 1. In campaign two one of those two happened
+to come back on their own, which put the control rate at 50 percent against a true 6 percent
+and dragged the measured lift negative.
+
+Two changes make the learning survive that, and both are ordinary statistics rather than
+tricks:
+
+1. **Pool the counts, do not average the lifts.** Adding the numerators and denominators
+   across campaigns before dividing is the standard way to combine small strata. Averaging
+   per campaign ratios lets one unlucky campaign swing the whole estimate.
+2. **Pool the control arm with the ledger's own unprompted lapse episodes.** The randomised
+   control and the historical episodes measure the same quantity, an untouched regular
+   coming back by themselves, so they are pooled, with the randomised control dominating as
+   it grows. This is the hierarchical answer from the prepared questions, made executable:
+   borrow strength early, stop borrowing once you have your own evidence. **Measurement
+   itself never does this. Only learning does.**
+
+There is a test asserting no single campaign moves the belief by more than 0.10, so the
+negative measurement in campaign two cannot wreck the model.
+
+Also learned the hard way: learning a separate uplift **per offer level** does not work at
+this scale, because it splits already thin evidence three ways. The shape across levels is
+kept from the priors, which encode the ordinary fact that a deeper discount pulls harder,
+and only the overall **response scale** is learned. Every campaign at any level contributes
+to one number. After six campaigns this shop is measured at 1.82 times as responsive as the
+priors assumed.
+
+### 6. Endpoints
+
+`POST /measure` is real. `GET /learning` returns the series and the learned scale.
+`GET /grid` returns the candidate by level grid with what the model proposed and which level
+the simulator picked. `POST /campaign/launch` now genuinely assigns the holdout, records the
+prediction **before** dispatch, and renders the messages.
+
+Predictions are written at prediction time on purpose. A prediction stored after the outcome
+is known is not a prediction.
+
+### One behaviour change to a Step 4 test
+
+`test_call_then_button_then_launch_then_measure` asserted `/measure` returned `not_ready`,
+which was the Step 4 stub answering. It now asserts a real measurement and that
+`lift == treated_rate - control_rate`. Reporting it rather than burying it.
+
+### Not done, by instruction
+
+No n8n, no Cognee, no learning curve chart in the dashboard yet, no real telephony. `.env`
+was never opened, printed or edited. Network went only to `api.sarvam.ai` for the speech
+round trip. Nothing pushed.
+
+### The whole loop, offline, no network
+
+```
+GET /health                200  ok
+    mode=replay llm=sarvam-105b tts=bulbul:v3 stt=saaras:v3 key_present=True
+POST /triage               200  ok
+    12 lapsed, value at risk 9460, worth a call True
+POST /generate             200  ok
+    5 candidates from the llm
+POST /simulate             200  ok
+
+    candidate                                       LOW     MEDIUM       HIGH   chosen
+    lapsed_winback_lapsed_regulars_1            148.03     186.62     107.02    MEDIUM
+    offpeak_fill_offpeak_slot_2                  -4.09x     -8.23x    -24.66x   REFUSED
+    attach_upsell_anchor_buyers_3              -103.00x   -236.06x   -522.64x   REFUSED
+    offpeak_fill_offpeak_slot_4                  -4.09x     -8.23x    -24.66x   REFUSED
+    attach_upsell_anchor_buyers_5              -103.00x   -236.06x   -522.64x   REFUSED
+
+POST /call                 200  ok
+    call call_1c57bd4347, brief for lapsed_winback_lapsed_regulars_1 at level MEDIUM
+    script: नमस्ते Ramesh जी, आपके 12 पुराने रेगुलर कस्टमर आना बंद कर गए हैं, जिससे आपको हर महीने करीब ₹9,460 का नुकसान हो रहा है। अगर हम उनके पास एक 20% chhoot chai pe भेजें तो कैसा रहेगा? हम सिर्फ 10 लोगों को ही मैसेज करेंगे, बाकी 2 को बाहर रखेंगे ताकि हमें पता चले कि ऑफर सच में काम कर रहा है या नहीं। क्या मैं भेज दूँ?
+GET /soundbox/state        200  ok
+    audio rendered from cache, no network
+GET /soundbox              200  ok  (both fallback buttons present)
+GET /soundbox/audio        200  ok  (938732 bytes of wav)
+POST /soundbox/button      200  ok
+    approved via button, transcript 'Haan, bhej do.'
+POST /campaign/launch      200  ok
+    campaign camp_5cce124a63, 10 treated and 2 held back
+POST /measure              200  ok
+    lift -0.100 = 4 of 10 treated minus 1 of 2 held back, incremental revenue -14.78
+    predicted uplift 0.140, measured -0.100, error 0.240
+GET /learning              200  ok
+    campaign 1 believed 0.140, campaign 1 believes 0.140
+GET /grid                  200  ok
+    5 candidates by 3 levels, the model proposes the action and the segment, the simulator
+GET /decisions             200  ok
+    9 decision lines logged: health, triage, generate, simulate, call, voice_reply, campaign_launch, measure, grid
+
+ALL STEPS PASSED OFFLINE, NO NETWORK TOUCHED
+```
+
+### Test suite
+
+```
+$ python -m pytest tests/ -q
+124 passed in 10.50s
+
+$ python -m scripts.check_data
+all checks passed
+```
+
+**Next: Step 6, n8n orchestration and the judge dashboard.**
+
+---
+
 ## Step 4: local soundbox and API (Fri 18 Sep, early)
 
 Status: **done, 86 tests pass, the whole loop runs offline, Sarvam speech is live.**

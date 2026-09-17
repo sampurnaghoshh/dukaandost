@@ -208,7 +208,8 @@ def _estimate_lapsed_winback(candidate: dict, context: dict) -> dict:
 
     level = offer_level(candidate)
     baseline = context["baseline"]["rate"]
-    uplift = PRIOR_OFFER_UPLIFT[level]
+    learned = context["learned_uplift"](level)
+    uplift = learned["uplift"]
     monthly_value_each = signal["value_at_risk_monthly"] / targets
     revenue_each = (monthly_value_each * (VALUE_HORIZON_DAYS / 30.0)
                     * PRIOR_RECOVERY_INTENSITY)
@@ -217,8 +218,7 @@ def _estimate_lapsed_winback(candidate: dict, context: dict) -> dict:
         candidate, context, segment_size=targets, response_units=targets,
         baseline_rate=baseline, offer_uplift=uplift, revenue_per_response=revenue_each,
         baseline_source=context["baseline"]["method"],
-        uplift_source=("PRIOR_OFFER_UPLIFT[%s] = %.2f, a named constant, replaced by "
-                       "measured lift after the first campaign" % (level, uplift)),
+        uplift_source=_uplift_source(level, learned),
         basis=[
             "%d lapsed regulars found by triage from the ledger" % targets,
             "cohort is worth %.0f rupees a month, %.0f each"
@@ -314,6 +314,14 @@ ESTIMATORS = {
     "offpeak_fill": _estimate_offpeak_fill,
     "attach_upsell": _estimate_attach_upsell,
 }
+
+
+def _uplift_source(level: str, learned: dict) -> str:
+    """Says plainly whether this number is still a prior or has been earned by measurement."""
+    if learned["source"] == "PRIOR":
+        return ("PRIOR_OFFER_UPLIFT[%s] = %.2f, a named constant, replaced by measured lift "
+                "after the first campaign" % (level, learned["uplift"]))
+    return ("MEASURED, %.3f: %s" % (learned["uplift"], learned["explanation"]))
 
 
 def _empty(reason: str) -> dict:
@@ -514,7 +522,8 @@ def level_grid_table(ranking: dict) -> list:
 
 def rank(merchant_id: str, candidates: list, triage_result: dict,
          today: date | str | None = None, conn: sqlite3.Connection | None = None,
-         db_path: str | None = None, discount_spent_this_month: float = 0.0) -> dict:
+         db_path: str | None = None, discount_spent_this_month: float = 0.0,
+         memory: sqlite3.Connection | None = None) -> dict:
     """Scores every candidate against this shop's history and ranks the survivors."""
     owned = conn is None
     conn = conn or ledger.connect(db_path)
@@ -528,6 +537,24 @@ def rank(merchant_id: str, candidates: list, triage_result: dict,
         profiles = triage.customer_profiles(
             ledger.customer_days(conn, merchant_id, today), today)
 
+        # What this merchant's own campaigns have taught us, if any have run. With no
+        # memory, or none at this offer level, the prior stands.
+        learned_cache: dict = {}
+
+        def learned_uplift(level: str) -> dict:
+            if level not in learned_cache:
+                prior = PRIOR_OFFER_UPLIFT[level]
+                if memory is None:
+                    learned_cache[level] = {"uplift": prior, "source": "PRIOR",
+                                            "campaigns": 0, "prior": prior,
+                                            "explanation": "no campaign memory attached"}
+                else:
+                    from memory import store
+                    learned_cache[level] = store.learned_uplift(
+                        memory, merchant_id, level, prior, PRIOR_OFFER_UPLIFT,
+                        baseline_rate=context["baseline"]["rate"])
+            return learned_cache[level]
+
         context = {
             "conn": conn,
             "merchant_id": merchant_id,
@@ -535,6 +562,7 @@ def rank(merchant_id: str, candidates: list, triage_result: dict,
             "triage": triage_result,
             "avg_ticket": totals["avg_ticket"],
             "baseline": baseline_return_rate(profiles, today),
+            "learned_uplift": learned_uplift,
         }
 
         scored = [_price_every_level(candidate, context) for candidate in candidates]
@@ -589,6 +617,7 @@ def rank(merchant_id: str, candidates: list, triage_result: dict,
                 "holdout_share": HOLDOUT_SHARE,
             },
             "priors_used": PRIORS,
+            "uplift_in_use": {level: learned_uplift(level) for level in OFFER_LEVELS},
             "candidates_in": len(candidates),
             "offer_levels": {level: OFFER_LEVEL_DISCOUNT_PCT[level] for level in OFFER_LEVELS},
             "level_grid": level_grid_table({"ranked": accepted, "rejected": rejected}),
