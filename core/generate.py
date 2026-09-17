@@ -108,7 +108,7 @@ class GeneratedCandidate(BaseModel):
     title: str
     action_type: str                 # deliberately open, the simulator refuses what it cannot price
     target_segment: dict[str, Any] = Field(default_factory=dict)
-    offer_level: str                 # LOW, MEDIUM or HIGH. Code turns this into a percentage.
+    offer_level: str = ""            # ignored, kept only so older cached answers still load
     offer_item: str = ""
     rationale: str = ""              # short English, for the judge dashboard
     message_template: str = ""       # Hindi or Hinglish, placeholders only
@@ -236,8 +236,9 @@ PROPOSE_INSTRUCTION = (
     "HARD RULES about your text. Breaking any of these gets the candidate thrown away:\n"
     "1. Write NO numbers anywhere, in any script. No digits, no Devanagari digits, no "
     "spelled out amounts, no percent sign, no rupee sign.\n"
-    "2. The discount depth is not yours to choose. Say only how generous the offer feels, "
-    "as offer_level, one of LOW, MEDIUM or HIGH.\n"
+    "2. The discount depth is not yours to choose at all. Do not mention it, do not hint at "
+    "it, do not say whether it should be big or small. An arithmetic engine prices every "
+    "depth it is prepared to offer and keeps whichever one actually makes the shop money.\n"
     "3. The customer message must be natural Hindi or Hinglish as a shopkeeper would say "
     "it, and may use only these three placeholders, each written in curly braces: "
     "customer_name, offer, shop_name. The engine fills them in.\n"
@@ -250,12 +251,11 @@ PROPOSE_INSTRUCTION = (
     "target_segment must be an object with a kind field. Use kind lapsed_regulars, or kind "
     "offpeak_slot together with weekday_name, or kind anchor_buyers together with "
     "anchor_item.\n\n"
-    "EVERY candidate object must carry all seven of these fields. A candidate that leaves "
+    "EVERY candidate object must carry all six of these fields. A candidate that leaves "
     "out message_template is thrown away:\n"
     "  title             short English name for the action\n"
     "  action_type       the mechanic, see above\n"
     "  target_segment    object with a kind field\n"
-    "  offer_level       LOW, MEDIUM or HIGH\n"
     "  offer_item        one product key from the menu list below, copied character for "
     "character. Not a description, not a phrase.\n"
     "  rationale         one short English sentence\n"
@@ -263,7 +263,7 @@ PROPOSE_INSTRUCTION = (
     "placeholders customer_name, offer and shop_name in curly braces\n\n"
     "Answer with JSON only, no explanation, in this shape:\n"
     '{"candidates": [{"title": "", "action_type": "", "target_segment": {"kind": ""}, '
-    '"offer_level": "LOW", "offer_item": "", "rationale": "", '
+    '"offer_item": "", "rationale": "", '
     '"message_template": "...{customer_name}...{offer}...{shop_name}..."}]}\n\n'
     "What the engine found:\n"
 )
@@ -328,9 +328,18 @@ def propose(evidence: dict, on_event=None) -> dict:
     kept, dropped = [], []
 
     for attempt in range(2):
+        content = prompt
+        if attempt:
+            # Name the actual faults. A generic scolding about numerals does not help a
+            # model that simply left a field out, which is the failure we see most.
+            faults = sorted({reason for item in dropped for reason in item["reasons"]})
+            content += ("\n\nYour previous answer had these faults, and every candidate "
+                        "carrying one was thrown away. Fix them all and answer again:\n"
+                        + "\n".join("- %s" % fault for fault in faults)
+                        + "\n\nWrite message_template for every single candidate. It is the "
+                        "field most often forgotten and a candidate without it is useless.")
         messages = [{"role": "system", "content": PROPOSE_SYSTEM},
-                    {"role": "user", "content": prompt if attempt == 0
-                     else prompt + STRICTER_REMINDER}]
+                    {"role": "user", "content": content}]
         result, meta = llm.complete(
             messages, CandidateList,
             label="propose" if attempt == 0 else "propose_retry", temperature=0.6)
@@ -368,8 +377,6 @@ def _candidate_problems(candidate: GeneratedCandidate) -> list:
                     for item in check_text(candidate.message_template, CUSTOMER_PLACEHOLDERS))
     problems.extend("rationale: %s" % item for item in check_text(candidate.rationale, set()))
     problems.extend("title: %s" % item for item in check_text(candidate.title, set()))
-    if candidate.offer_level.upper() not in simulate.OFFER_LEVELS:
-        problems.append("offer_level %r is not LOW, MEDIUM or HIGH" % candidate.offer_level)
     if not candidate.target_segment.get("kind"):
         problems.append("target_segment has no kind")
     return problems
@@ -402,7 +409,6 @@ def _resolve_offer_item(candidate: GeneratedCandidate, products: list | None,
 def normalise(candidate: GeneratedCandidate, triage_result: dict, index: int,
               products: list | None = None) -> dict:
     """Fills in every number the model was not allowed to choose."""
-    level = candidate.offer_level.upper()
     action = candidate.action_type
     segment = dict(candidate.target_segment)
     kind = segment.get("kind")
@@ -418,18 +424,18 @@ def normalise(candidate: GeneratedCandidate, triage_result: dict, index: int,
                 break
 
     return {
-        "candidate_id": "%s_%s_%s_%d" % (_slug(action) or "action", _slug(kind or "segment"),
-                                         level.lower(), index + 1),
+        "candidate_id": "%s_%s_%d" % (_slug(action) or "action", _slug(kind or "segment"),
+                                      index + 1),
         "action_type": action,
         "title": candidate.title,
         "rationale": candidate.rationale,
         "source": "llm",
         "generation_index": index,
         "target_segment": segment,
+        # No percentage and no level. simulate.py prices LOW, MEDIUM and HIGH and keeps the
+        # best one that survives the guardrails, so the depth is never the model's to choose.
         "offer": {
             "type": "percent_discount",
-            "offer_level": level,
-            "value": simulate.OFFER_LEVEL_DISCOUNT_PCT.get(level),
             "applies_to": _resolve_offer_item(candidate, products, segment),
             "validity_days": OFFER_VALIDITY_DAYS.get(action, DEFAULT_VALIDITY_DAYS),
         },

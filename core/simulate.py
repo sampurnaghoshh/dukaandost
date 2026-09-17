@@ -407,6 +407,107 @@ def check_guardrails(candidate: dict, estimates: dict) -> list:
 
 
 # --------------------------------------------------------------------------
+# Pricing the offer depth
+#
+# The LLM proposes what to do and to whom. It does not choose how deep the discount goes,
+# because a discount depth is a number and the model never produces a number. Code prices
+# all three levels for every candidate and keeps the best one that survives the guardrails.
+# --------------------------------------------------------------------------
+
+
+def at_level(candidate: dict, level: str) -> dict:
+    """The same candidate with the discount depth code assigns to that level."""
+    offer = dict(candidate.get("offer") or {})
+    offer["type"] = offer.get("type") or "percent_discount"
+    offer["offer_level"] = level
+    offer["value"] = OFFER_LEVEL_DISCOUNT_PCT[level]
+    return dict(candidate, offer=offer)
+
+
+def _price_every_level(candidate: dict, context: dict) -> dict:
+    """Prices LOW, MEDIUM and HIGH and reports the whole grid, survivors and refusals alike."""
+    estimator = ESTIMATORS.get(candidate.get("action_type"))
+    grid = []
+    for level in OFFER_LEVELS:
+        variant = at_level(candidate, level)
+        if estimator is None:
+            estimates = _empty("no estimator for action type %r, the simulator refuses to "
+                               "guess" % candidate.get("action_type"))
+        else:
+            estimates = estimator(variant, context)
+        rejections = check_guardrails(variant, estimates)
+        grid.append({
+            "offer_level": level,
+            "discount_pct": OFFER_LEVEL_DISCOUNT_PCT[level],
+            "offer": variant["offer"],
+            "estimates": estimates,
+            "rejections": rejections,
+            "survives": not rejections,
+            "expected_profit": estimates.get("expected_profit", 0.0),
+        })
+
+    survivors = sorted([row for row in grid if row["survives"]],
+                       key=lambda row: row["estimates"]["expected_profit"], reverse=True)
+
+    item = {
+        "candidate_id": candidate.get("candidate_id"),
+        "action_type": candidate.get("action_type"),
+        "title": candidate.get("title"),
+        "rationale": candidate.get("rationale"),
+        "source": candidate.get("source", "fixture"),
+        "target_segment": candidate.get("target_segment"),
+        "message_template": candidate.get("message_template"),
+        "level_grid": grid,
+        "survivors": survivors,
+        "best": survivors[0] if survivors else None,
+        "levels_refused": {row["offer_level"]: row["rejections"]
+                           for row in grid if not row["survives"]},
+    }
+    if survivors:
+        _adopt_level(item, survivors[0])
+        item["rejections"] = []
+    else:
+        # Nothing survived. Report why each level failed, so the dashboard can show the
+        # difference between "too generous" and "not worth doing at any depth".
+        worst = max(grid, key=lambda row: row["estimates"].get("expected_profit", 0.0))
+        _adopt_level(item, worst)
+        item["rejections"] = ["%s: %s" % (row["offer_level"], reason)
+                              for row in grid for reason in row["rejections"]]
+    return item
+
+
+def _adopt_level(item: dict, row: dict) -> None:
+    """Promotes one level of the grid to be the candidate's headline offer and numbers."""
+    item["offer"] = row["offer"]
+    item["offer_level"] = row["offer_level"]
+    item["estimates"] = row["estimates"]
+
+
+def level_grid_table(ranking: dict) -> list:
+    """Candidate by level with expected profit, flat enough for the dashboard to render."""
+    rows = []
+    for item in ranking["ranked"] + ranking["rejected"]:
+        entry = {
+            "candidate_id": item["candidate_id"],
+            "title": item["title"],
+            "action_type": item["action_type"],
+            "source": item["source"],
+            "accepted": item.get("accepted", False),
+            "chosen_level": item.get("offer_level") if item.get("accepted") else None,
+            "levels": {},
+        }
+        for row in item["level_grid"]:
+            entry["levels"][row["offer_level"]] = {
+                "discount_pct": row["discount_pct"],
+                "expected_profit": row["estimates"].get("expected_profit", 0.0),
+                "survives": row["survives"],
+                "rejections": row["rejections"],
+            }
+        rows.append(entry)
+    return rows
+
+
+# --------------------------------------------------------------------------
 # Ranking
 # --------------------------------------------------------------------------
 
@@ -436,45 +537,38 @@ def rank(merchant_id: str, candidates: list, triage_result: dict,
             "baseline": baseline_return_rate(profiles, today),
         }
 
-        scored = []
-        for candidate in candidates:
-            estimator = ESTIMATORS.get(candidate.get("action_type"))
-            if estimator is None:
-                estimates = _empty("no estimator for action type %r, the simulator refuses to "
-                                   "guess" % candidate.get("action_type"))
-            else:
-                estimates = estimator(candidate, context)
-            scored.append({
-                "candidate_id": candidate.get("candidate_id"),
-                "action_type": candidate.get("action_type"),
-                "title": candidate.get("title"),
-                "rationale": candidate.get("rationale"),
-                "source": candidate.get("source", "fixture"),
-                "target_segment": candidate.get("target_segment"),
-                "offer": candidate.get("offer"),
-                "message_template": candidate.get("message_template"),
-                "estimates": estimates,
-                "rejections": check_guardrails(candidate, estimates),
-            })
+        scored = [_price_every_level(candidate, context) for candidate in candidates]
 
-        scored.sort(key=lambda item: item["estimates"].get("expected_profit", 0.0), reverse=True)
+        # Rank on the best surviving level. A candidate with no surviving level sorts last.
+        scored.sort(key=lambda item: (item["best"]["estimates"]["expected_profit"]
+                                      if item["best"] else float("-inf")), reverse=True)
 
         budget_remaining = MONTHLY_DISCOUNT_BUDGET_RUPEES - discount_spent_this_month
         accepted, rejected = [], []
         for item in scored:
-            if item["rejections"]:
+            # Take the most profitable level that both survives and fits what is left of the
+            # month's discount budget. A cheaper level is better than no campaign at all.
+            affordable = [row for row in item["survivors"]
+                          if row["estimates"]["discount_cost"] <= budget_remaining]
+            if not item["survivors"]:
                 item["accepted"] = False
                 rejected.append(item)
                 continue
-            cost = item["estimates"]["discount_cost"]
-            if cost > budget_remaining:
-                item["rejections"].append(
-                    "monthly discount budget: needs %.2f rupees, %.2f left of %.2f"
-                    % (cost, budget_remaining, MONTHLY_DISCOUNT_BUDGET_RUPEES))
+            if not affordable:
+                cheapest = min(item["survivors"],
+                               key=lambda row: row["estimates"]["discount_cost"])
+                item["rejections"] = list(item["rejections"]) + [
+                    "monthly discount budget: cheapest surviving level %s needs %.2f rupees, "
+                    "%.2f left of %.2f" % (cheapest["offer_level"],
+                                           cheapest["estimates"]["discount_cost"],
+                                           budget_remaining, MONTHLY_DISCOUNT_BUDGET_RUPEES)]
                 item["accepted"] = False
                 rejected.append(item)
                 continue
-            budget_remaining -= cost
+
+            chosen = affordable[0]
+            _adopt_level(item, chosen)
+            budget_remaining -= chosen["estimates"]["discount_cost"]
             item["accepted"] = True
             item["rank"] = len(accepted) + 1
             accepted.append(item)
@@ -496,6 +590,8 @@ def rank(merchant_id: str, candidates: list, triage_result: dict,
             },
             "priors_used": PRIORS,
             "candidates_in": len(candidates),
+            "offer_levels": {level: OFFER_LEVEL_DISCOUNT_PCT[level] for level in OFFER_LEVELS},
+            "level_grid": level_grid_table({"ranked": accepted, "rejected": rejected}),
             "ranked": accepted,
             "rejected": rejected,
             "recommended": accepted[0] if accepted else None,

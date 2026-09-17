@@ -245,6 +245,8 @@ dukaan-dost/
 │   ├── fixtures.py          # placeholder candidates, replaced by generate.py in Step 3
 │   ├── holdout.py           # random assignment, 85/15
 │   ├── measure.py           # lift = treated minus control
+│   ├── speech.py            # Sarvam text to speech and speech to text, cached
+│   ├── llm.py               # Sarvam chat completions, record and replay
 │   └── run_night.py         # one nightly cycle end to end, CLI entry point
 ├── voice/
 │   ├── base.py              # dial() interface, Brief, Decision
@@ -255,6 +257,7 @@ dukaan-dost/
 ├── api/
 │   └── main.py              # FastAPI, incl. mid-call campaign endpoint
 ├── dashboard/               # judge view: reasoning trace, learning curve
+│   └── soundbox.html        # merchant approval page, plays the script, Haan and Nahi buttons
 ├── workflows/               # n8n JSON exports
 ├── scripts/
 │   └── check_data.py        # validates the generated ledger, exits non-zero on failure

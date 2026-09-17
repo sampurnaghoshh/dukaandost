@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dukaan Dost Soundbox</title>
+<style>
+  :root {
+    --ink: #10221c;
+    --paper: #f6f4ee;
+    --line: #d9d4c6;
+    --green: #0f7a4f;
+    --red: #a32020;
+    --muted: #5d6b64;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 24px 16px 56px;
+    font-family: "Segoe UI", Roboto, "Noto Sans Devanagari", system-ui, sans-serif;
+    background: var(--paper); color: var(--ink);
+  }
+  .wrap { max-width: 720px; margin: 0 auto; }
+  header { border-bottom: 2px solid var(--line); padding-bottom: 12px; margin-bottom: 20px; }
+  h1 { font-size: 20px; margin: 0 0 4px; letter-spacing: -0.01em; }
+  .sub { color: var(--muted); font-size: 13px; }
+  .card {
+    background: #fff; border: 1px solid var(--line); border-radius: 10px;
+    padding: 16px 18px; margin-bottom: 16px;
+  }
+  .label { font-size: 11px; letter-spacing: 0.09em; text-transform: uppercase;
+           color: var(--muted); margin-bottom: 8px; }
+  .script { font-size: 19px; line-height: 1.7; }
+  .numbers { display: flex; flex-wrap: wrap; gap: 18px; margin-top: 4px; }
+  .num b { display: block; font-size: 19px; font-variant-numeric: tabular-nums; }
+  .num span { font-size: 11px; color: var(--muted); text-transform: uppercase;
+              letter-spacing: 0.06em; }
+  .buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 6px; }
+  button {
+    font: inherit; font-size: 27px; font-weight: 700; color: #fff; cursor: pointer;
+    border: none; border-radius: 12px; padding: 30px 12px; min-height: 108px;
+  }
+  button:active { transform: translateY(1px); }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  .haan { background: var(--green); }
+  .nahi { background: var(--red); }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  .ghost {
+    background: #fff; color: var(--ink); border: 1px solid var(--line);
+    font-size: 15px; font-weight: 600; padding: 12px 18px; min-height: 0; border-radius: 8px;
+  }
+  .status { font-size: 14px; color: var(--muted); margin-top: 12px; min-height: 20px; }
+  .outcome { font-size: 22px; font-weight: 700; margin-top: 8px; }
+  .approved { color: var(--green); }
+  .declined { color: var(--red); }
+  .undecided { color: #8a6d1f; }
+  .hint { font-size: 12px; color: var(--muted); margin-top: 10px; line-height: 1.5; }
+  .transcript { font-size: 15px; background: #f0efe8; border-radius: 6px; padding: 10px 12px;
+                margin-top: 10px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <h1>Dukaan Dost, merchant approval</h1>
+    <div class="sub" id="who">loading the call...</div>
+  </header>
+
+  <div class="card">
+    <div class="label">What the agent says</div>
+    <div class="script" id="script"></div>
+    <div class="row" style="margin-top:14px">
+      <button class="ghost" id="play">Play the call</button>
+      <button class="ghost" id="record">Answer with the mic</button>
+    </div>
+    <div class="status" id="status"></div>
+  </div>
+
+  <div class="card">
+    <div class="label">Answer without the mic</div>
+    <div class="buttons">
+      <button class="haan" id="haan">HAAN</button>
+      <button class="nahi" id="nahi">NAHI</button>
+    </div>
+    <div class="hint">
+      These two produce exactly the same Decision as the spoken reply, with no microphone
+      and no network. They exist so a noisy room or a bad connection cannot stop the demo.
+    </div>
+  </div>
+
+  <div class="card" id="result" style="display:none">
+    <div class="label">Decision</div>
+    <div class="outcome" id="outcome"></div>
+    <div class="transcript" id="heard"></div>
+    <div class="hint" id="detail"></div>
+  </div>
+
+  <div class="card">
+    <div class="label">What was approved, all of it decided before the phone rang</div>
+    <div class="numbers" id="numbers"></div>
+  </div>
+
+</div>
+
+<script>
+const params = new URLSearchParams(location.search);
+const callId = params.get("call_id") || "";
+const el = (id) => document.getElementById(id);
+let audio = null;
+
+function setStatus(text) { el("status").textContent = text; }
+
+async function loadState() {
+  if (!callId) { setStatus("No call_id in the URL. Start one with POST /call."); return; }
+  const response = await fetch("/soundbox/state?call_id=" + encodeURIComponent(callId));
+  if (!response.ok) { setStatus("That call is not open any more."); return; }
+  const state = await response.json();
+  el("who").textContent = state.merchant_name + "  |  " + state.title;
+  el("script").textContent = state.script;
+
+  const n = state.numbers || {};
+  el("numbers").innerHTML = [
+    ["lapsed customers", n.lapsed_count],
+    ["at risk per month", "Rs " + Math.round(n.value_at_risk_monthly || 0)],
+    ["offer", (n.discount_pct || 0) + " pc off " + (n.offer_applies_to || "")],
+    ["messaged", n.treated_count],
+    ["held back", n.holdout_count],
+    ["expected profit", "Rs " + Math.round(n.expected_profit || 0)]
+  ].map(([k, v]) => '<div class="num"><b>' + v + "</b><span>" + k + "</span></div>").join("");
+
+  if (!state.has_audio) {
+    setStatus("No audio for this call (" + (state.audio_error || "not rendered") +
+              "). The buttons still work.");
+    el("play").disabled = true;
+  }
+  if (state.settled) { showDecision(state.decision, ""); }
+}
+
+function showDecision(decision, heard) {
+  el("result").style.display = "block";
+  const undecided = decision.modifications && decision.modifications.undecided;
+  const outcome = undecided ? "undecided" : decision.outcome;
+  el("outcome").textContent = outcome.toUpperCase();
+  el("outcome").className = "outcome " + (outcome === "approved" ? "approved" :
+                            outcome === "declined" ? "declined" : "undecided");
+  el("heard").textContent = "Heard: " + (heard || decision.transcript || "nothing");
+  el("detail").textContent = "via " + (decision.modifications.via || "?") +
+    ", call " + decision.call_id + ", candidate " + decision.candidate_id;
+  ["haan", "nahi", "record"].forEach((id) => { el(id).disabled = true; });
+}
+
+el("play").onclick = () => {
+  audio = new Audio("/soundbox/audio?call_id=" + encodeURIComponent(callId));
+  audio.play().then(() => setStatus("Playing...")).catch(
+    () => setStatus("The browser blocked playback. Press it again, or use the buttons."));
+};
+
+async function sendButton(answer) {
+  const response = await fetch("/soundbox/button", {
+    method: "POST", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({call_id: callId, answer: answer})
+  });
+  const payload = await response.json();
+  showDecision(payload.decision, "");
+}
+el("haan").onclick = () => sendButton("haan");
+el("nahi").onclick = () => sendButton("nahi");
+
+el("record").onclick = async () => {
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({audio: true});
+  } catch (err) {
+    setStatus("No microphone available. Use the buttons below.");
+    return;
+  }
+  const recorder = new MediaRecorder(stream);
+  const chunks = [];
+  recorder.ondataavailable = (event) => chunks.push(event.data);
+  recorder.onstop = async () => {
+    stream.getTracks().forEach((track) => track.stop());
+    setStatus("Transcribing...");
+    const form = new FormData();
+    form.append("call_id", callId);
+    // Sarvam speech to text auto detects WebM, so the browser blob goes up untouched.
+    form.append("audio", new Blob(chunks, {type: "audio/webm"}), "reply.webm");
+    const response = await fetch("/soundbox/reply", {method: "POST", body: form});
+    const payload = await response.json();
+    if (payload.status === "reprompt") {
+      setStatus("Did not catch that. Asking once more...");
+      el("heard").textContent = "";
+      const again = new Audio("/soundbox/audio?call_id=" + encodeURIComponent(callId) +
+                              "&kind=reprompt");
+      again.play().catch(() => {});
+      setStatus("Reprompt: " + payload.reprompt_text + "  Press the mic button again.");
+    } else {
+      showDecision(payload.decision, payload.transcript);
+    }
+  };
+  recorder.start();
+  setStatus("Listening, say haan or nahi...");
+  setTimeout(() => recorder.stop(), 4000);
+};
+
+loadState();
+</script>
+</body>
+</html>

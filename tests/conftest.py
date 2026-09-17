@@ -40,13 +40,17 @@ def no_network(monkeypatch):
 
     The suite must be runnable on a plane, on venue wifi, and without spending credit.
     Anything needing the model reads the recorded cache in data/llm_cache.
+
+    Blocked at the transport rather than at httpx.Client.post, because FastAPI's TestClient
+    is itself an httpx client and has to keep working. HTTPTransport is what a real outbound
+    call goes through, and the TestClient's ASGITransport never touches it.
     """
     import httpx
 
     def blocked(*args, **kwargs):
         raise AssertionError("this test tried to reach the network")
 
-    monkeypatch.setattr(httpx.Client, "post", blocked)
-    monkeypatch.setattr(httpx, "post", blocked, raising=False)
+    monkeypatch.setattr(httpx.HTTPTransport, "handle_request", blocked)
+    monkeypatch.setattr(httpx.AsyncHTTPTransport, "handle_async_request", blocked)
     monkeypatch.setenv("LLM_MODE", "replay")
     return blocked

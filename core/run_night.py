@@ -191,6 +191,21 @@ def print_ranking(ranking: dict) -> None:
           % (100 * simulate.MARGIN_FLOOR, RUPEE, simulate.MONTHLY_DISCOUNT_BUDGET_RUPEES,
              100 * HOLDOUT_SHARE))
 
+    _rule("Offer level grid, expected profit over %d days" % ranking["horizon_days"])
+    print("  The model proposes the action. Code prices every depth and keeps the best one")
+    print("  that survives the guardrails. An x means that level was refused.")
+    print("")
+    print("  %-38s %10s %10s %10s   chosen"
+          % ("candidate", "LOW 10pc", "MED 20pc", "HIGH 35pc"))
+    for row in ranking["level_grid"]:
+        cells = []
+        for level in ("LOW", "MEDIUM", "HIGH"):
+            cell = row["levels"][level]
+            cells.append("%9.2f%s" % (cell["expected_profit"], " " if cell["survives"] else "x"))
+        print("  %-38s %10s %10s %10s   %s"
+              % (row["candidate_id"][:38], cells[0], cells[1], cells[2],
+                 row["chosen_level"] or "REFUSED"))
+
     _rule("Ranked actions, expected profit over %d days" % ranking["horizon_days"])
     if not ranking["ranked"]:
         print("  Nothing clears the guardrails. The agent proposes doing nothing tonight.")
@@ -200,7 +215,7 @@ def print_ranking(ranking: dict) -> None:
     if ranking["rejected"]:
         _rule("Refused")
         for item in ranking["rejected"]:
-            print("  %s   [%s]" % (item["title"], item["candidate_id"]))
+            print("  %s   [%s], refused at every level" % (item["title"], item["candidate_id"]))
             for reason in item["rejections"]:
                 print("     refused: %s" % reason)
 
@@ -208,8 +223,9 @@ def print_ranking(ranking: dict) -> None:
 def _print_candidate(item: dict) -> None:
     estimates = item["estimates"]
     print("")
-    print("  %d. %s   [%s, from the %s]"
-          % (item["rank"], item["title"], item["candidate_id"], item["source"]))
+    print("  %d. %s   [%s, from the %s, level %s]"
+          % (item["rank"], item["title"], item["candidate_id"], item["source"],
+             item["offer_level"]))
     if item.get("rationale"):
         print("     why            %s" % item["rationale"])
     print("     offer          %s" % _offer_text(item["offer"]))

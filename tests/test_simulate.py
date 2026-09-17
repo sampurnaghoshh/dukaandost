@@ -74,11 +74,45 @@ def test_check_guardrails_refuses_zero_profit():
 # ---------------------------------------------------------------- the margin floor
 
 
-def test_deep_discount_breaks_the_margin_floor(ranking):
-    deep = [item for item in ranking["rejected"]
+def test_every_offer_level_code_can_choose_already_clears_the_margin_floor():
+    """Since Step 4 the depth is code's to pick, so the menu itself has to be legal.
+
+    This replaces an earlier test that asserted a candidate asking for fifty percent off was
+    refused on the margin floor. No candidate can ask for a depth any more, so that test was
+    checking a route that no longer exists. The guarantee that matters now is stronger: not
+    one of the depths the simulator is willing to offer breaches the floor.
+    """
+    for level, percent in simulate.OFFER_LEVEL_DISCOUNT_PCT.items():
+        margin = simulate.effective_margin(percent / 100.0)
+        assert margin >= simulate.MARGIN_FLOOR, (
+            "level %s at %d percent leaves %.2f margin, under the %.2f floor"
+            % (level, percent, margin, simulate.MARGIN_FLOOR))
+
+
+def test_the_margin_floor_still_refuses_a_level_that_is_too_deep(conn, triage_result,
+                                                                 monkeypatch):
+    """Put an illegal depth on the menu and the grid must refuse that level and keep going."""
+    monkeypatch.setattr(simulate, "OFFER_LEVEL_DISCOUNT_PCT",
+                        {"LOW": 10, "MEDIUM": 20, "HIGH": 50})
+    candidate = dict(fixtures.PLACEHOLDER_CANDIDATES[0])
+    result = simulate.rank(MERCHANT_ID, [candidate], triage_result, conn=conn)
+
+    item = (result["ranked"] + result["rejected"])[0]
+    high = [row for row in item["level_grid"] if row["offer_level"] == "HIGH"][0]
+    assert not high["survives"]
+    assert any("margin floor" in reason for reason in high["rejections"])
+    # The candidate still runs, just at a legal depth.
+    assert item["accepted"] is True
+    assert item["offer_level"] in ("LOW", "MEDIUM")
+
+
+def test_the_deep_discount_fixture_now_survives_at_a_shallower_level(ranking):
+    """The fifty percent placeholder is no longer expressible, so it runs at a sane depth."""
+    deep = [item for item in ranking["ranked"] + ranking["rejected"]
             if item["candidate_id"] == "winback_lapsed_chai_50"]
-    assert deep, "the 50 percent placeholder should never be accepted"
-    assert any("margin floor" in reason for reason in deep[0]["rejections"])
+    assert deep, "the fixture went missing"
+    assert deep[0]["offer"]["value"] in simulate.OFFER_LEVEL_DISCOUNT_PCT.values()
+    assert deep[0]["offer"]["value"] < 50
 
 
 def test_effective_margin_falls_faster_than_the_discount():

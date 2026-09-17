@@ -2,6 +2,224 @@
 
 Build log for Dukaan Dost. Newest step at the top.
 
+## Step 4: local soundbox and API (Fri 18 Sep, early)
+
+Status: **done, 86 tests pass, the whole loop runs offline, Sarvam speech is live.**
+
+### 1. Bug check: the Brief already used the ranked winner
+
+Checked first, as asked. It was **not** a bug. `simulate.rank()` sorts every candidate by
+expected profit, fills the accepted list in that order, and sets `recommended` to
+`accepted[0]`; `run_night.build_brief()` is handed that object and nothing else. The
+model's preferred candidate has never reached the Brief except by being the most
+profitable one.
+
+Two tests now pin it down so a later refactor cannot quietly break it. One feeds the
+candidates in deliberately wrong order, attach upsell first and winback last, and asserts
+the winback still wins. The other asserts `recommended` equals the maximum expected profit
+across the accepted list.
+
+One real defect did turn up next to it, worth recording: `_log()` in `api/main.py` took a
+positional parameter called `decision` while several callers also passed `decision=` in
+their keyword extras, which raised `TypeError: got multiple values`. Renamed to `outcome`.
+A second one in the same place: `run_night.log_decision()` binds its log path as a default
+argument, evaluated at import, so pointing the path elsewhere was silently ignored and the
+tests were asserting against a file nothing was writing to. The API now passes the path
+explicitly at call time.
+
+### 2. Offer depth moved into code, and the ranking changed
+
+The LLM now proposes `action_type`, `target_segment`, `offer_item`, a rationale and the
+customer message. It no longer proposes an offer level at all, and the prompt tells it not
+to hint at one. `simulate.rank()` prices LOW, MEDIUM and HIGH for **every** candidate,
+keeps the most profitable level that survives the guardrails and fits what is left of the
+discount budget, and refuses the candidate only if all three levels fail.
+
+The full grid comes back on the ranking as `level_grid`, one row per candidate with all
+three levels, so the dashboard can show the working rather than the conclusion.
+
+```
+candidate                                       LOW     MEDIUM       HIGH   chosen
+lapsed_winback_lapsed_regulars_1            148.03     186.62     107.02    MEDIUM
+offpeak_fill_offpeak_slot_2                  -4.09x     -8.23x    -24.66x   REFUSED
+attach_upsell_anchor_buyers_3              -103.00x   -236.06x   -522.64x   REFUSED
+offpeak_fill_offpeak_slot_4                  -4.09x     -8.23x    -24.66x   REFUSED
+attach_upsell_anchor_buyers_5              -103.00x   -236.06x   -522.64x   REFUSED
+```
+
+**The winback is worth more than it was.** It ran at 107.02 in Step 3 because the model
+picked HIGH on a hunch. Priced properly it is worth **186.62 at MEDIUM**, twenty percent
+off rather than thirty five. The model's taste in discounts was costing about eighty
+rupees a campaign, which is the entire argument for this change in one line.
+
+**Yes, the fifty percent winback now survives, at a shallower level.** Asked plainly, so
+answered plainly: the `winback_lapsed_chai_50` fixture is accepted, at MEDIUM, with
+identical numbers to the ten percent fixture. It is not that the guardrails got weaker. It
+is that a candidate can no longer ask for fifty percent off at all, so the two fixtures now
+describe the same action and the deep one has nothing left to distinguish it. The depth is
+not the proposer's to choose, whether the proposer is a language model or a hand written
+placeholder.
+
+That does retire one Step 2 test. `test_deep_discount_breaks_the_margin_floor` asserted a
+candidate asking for fifty percent was refused on the margin floor, and it was checking a
+route that no longer exists. It is replaced by three tests that are strictly stronger:
+
+- every depth on the code owned menu already clears the margin floor, so the floor cannot
+  be breached by construction rather than by catching a bad proposal
+- put an illegal depth on the menu and the grid refuses that level and runs the candidate
+  at a legal one, which proves the floor still bites inside the sweep
+- the fifty percent fixture comes out at a depth drawn from the menu, below fifty
+
+Worth saying out loud on stage: with a fifty five percent gross margin and a twenty five
+percent floor, the deepest legal discount is forty percent, and the menu tops out at thirty
+five. The margin floor has stopped being a filter on proposals and become a constraint on
+what the system is able to offer. That is a better place for it.
+
+### 3. Sarvam speech findings, read off docs.sarvam.ai on 18 Sep 2026
+
+| | Text to speech | Speech to text |
+|---|---|---|
+| Endpoint | `POST https://api.sarvam.ai/text-to-speech` | `POST https://api.sarvam.ai/speech-to-text` |
+| Body | JSON | `multipart/form-data` |
+| Model | **`bulbul:v3`**, legacy `bulbul:v2` | **`saaras:v3`** default, `saaras:v4` latest |
+| Response | `{"audios": ["<base64 wav>"]}`, join then decode | `{"transcript": "..."}` |
+| Limits | 2,500 characters per request | 30 seconds per request, batch API beyond |
+| Rates | 8000, 16000, 22050, 24000 Hz, plus 32000, 44100, 48000 on v3 REST only. Default 24000 | raw PCM needs `input_audio_codec` and must be 16 kHz |
+| Formats | WAV out | WAV, MP3, AAC, AIFF, OGG, OPUS, FLAC, MP4, AMR, WMA, **WebM**, auto detected |
+| Other | 30 plus speakers, `shubh` default, pace 0.5x to 2.0x | modes transcribe, translate, verbatim, translit, codemix |
+
+The single most useful line in either document is that speech to text auto detects
+**WebM**. Browser `MediaRecorder` hands us WebM and nothing else without a fight, so the
+microphone blob goes straight up with no transcoding step, no ffmpeg dependency and no
+conversion bug to debug at eight in the morning.
+
+`bulbul:v3` rendered the full 260 character Hindi script to a 938 KB WAV on the first try.
+Both models are in `.env.example` as `SARVAM_TTS_MODEL`, `SARVAM_TTS_SPEAKER` and
+`SARVAM_STT_MODEL`.
+
+### 4. The soundbox
+
+`voice/local_soundbox.py` implements `dial(merchant_id, brief) -> Decision` from
+`voice/base.py`. The flow: `dial()` renders the filled Hindi script through Sarvam TTS,
+parks a pending call, and returns immediately. The browser page plays the WAV, records four
+seconds of microphone audio, posts it back, Sarvam transcribes it and `classify_reply()`
+reads it.
+
+**The two buttons are the point.** HAAN and NAHI sit on the page at 27 point type and
+produce a `Decision` that is indistinguishable from the spoken one: same fields, same
+values, only `modifications.via` differs. There is a test asserting the two paths return
+the same shape. They need no microphone permission, no network and no Sarvam credit.
+
+Reading the answer is phrase matching, not a model. Forty plus approval and refusal
+phrases in Roman and Devanagari, whole word matched.
+
+- **Unclear reprompts once, then stops.** A second unclear reply ends the call as
+  undecided rather than guessing. Guessing here spends a merchant's money.
+- **A reply holding both a yes and a no is unclear**, because someone saying "haan nahi
+  nahi rehne do" is changing their mind.
+- **Except when one is a fragment of the other.** "mat bhejo" contains "bhejo", which is an
+  approval phrase. The longer, more specific phrase wins, so "mat bhejo" is a refusal.
+
+### 5. The API
+
+Eight endpoints, each one a step n8n can call on Friday, plus three that drive the page.
+Every one validates with pydantic and appends exactly one line to `logs/decisions.jsonl`.
+`/campaign/launch` is the mid call endpoint the Sarvam agent tool will hit in Step 5; it
+records the approval, returns a campaign id and reports the treated and holdout counts.
+`/measure` answers `not_ready` on purpose until Step 5 builds it.
+
+### How to launch the soundbox
+
+```bash
+uvicorn api.main:app --reload
+curl -s -X POST localhost:8000/call -H "Content-Type: application/json" -d "{}"
+# open the soundbox_url it returns, for example
+#   http://localhost:8000/soundbox?call_id=call_70c3283ee4
+```
+
+Press **Play the call** to hear the Hindi script, then either **Answer with the mic** or
+one of the two big buttons. With `LLM_MODE=replay` the whole thing runs with the network
+unplugged, because the script text, the candidates and the WAV are all cached.
+
+### Decisions made
+
+1. **A cheaper level is better than no campaign.** When the best level does not fit the
+   remaining discount budget, the ranking drops to the most profitable level that does,
+   rather than refusing the candidate outright.
+2. **Bare "ji" is not an approval.** It was in the list, and it should not have been: a
+   shopkeeper saying "ji?" is asking you to repeat yourself, not agreeing to spend money.
+3. **`offer_level` stayed on the generated candidate model as an ignored field** so cached
+   answers recorded before this step still load instead of failing validation.
+4. **The network blocker moved to the transport layer.** `httpx.HTTPTransport` and
+   `AsyncHTTPTransport` are patched rather than `httpx.Client.post`, because FastAPI's
+   TestClient is itself an httpx client and the old blocker was strangling it.
+
+### A real bug the tests caught, worth knowing
+
+The first version of the reply normaliser kept characters where `character.isalnum()` was
+true and turned everything else into a space. Devanagari vowel signs and the anusvara are
+combining marks, category Mc and Mn, and **`isalnum()` is false for them**, so every Hindi
+word was being torn into pieces and not one Devanagari approval matched. The normaliser now
+strips a named punctuation set and keeps everything else. Anything doing string work on
+Indic text should assume this trap is present until proved otherwise.
+
+### Not done, by instruction
+
+No real telephony, no holdout assignment, no dispatch, no measurement, no learning curve,
+no n8n, no Cognee. `.env` was never opened, printed or edited. Network was limited to
+`docs.sarvam.ai` and `api.sarvam.ai`. Nothing pushed.
+
+### The whole loop, offline, no network
+
+```
+GET /health                200  ok
+    mode=replay llm=sarvam-105b tts=bulbul:v3 stt=saaras:v3 key_present=True
+POST /triage               200  ok
+    12 lapsed, value at risk 9460, worth a call True
+POST /generate             200  ok
+    5 candidates from the llm
+POST /simulate             200  ok
+
+    candidate                                       LOW     MEDIUM       HIGH   chosen
+    lapsed_winback_lapsed_regulars_1            148.03     186.62     107.02    MEDIUM
+    offpeak_fill_offpeak_slot_2                  -4.09x     -8.23x    -24.66x   REFUSED
+    attach_upsell_anchor_buyers_3              -103.00x   -236.06x   -522.64x   REFUSED
+    offpeak_fill_offpeak_slot_4                  -4.09x     -8.23x    -24.66x   REFUSED
+    attach_upsell_anchor_buyers_5              -103.00x   -236.06x   -522.64x   REFUSED
+
+POST /call                 200  ok
+    call call_70c3283ee4, brief for lapsed_winback_lapsed_regulars_1 at level MEDIUM
+    script: नमस्ते Ramesh जी, आपके 12 पुराने रेगुलर कस्टमर आना बंद कर गए हैं, जिससे आपको हर महीने करीब ₹9,460 का नुकसान हो रहा है। अगर हम उनके पास एक 20% chhoot chai pe भेजें तो कैसा रहेगा? हम सिर्फ 10 लोगों को ही मैसेज करेंगे, बाकी 2 को बाहर रखेंगे ताकि हमें पता चले कि ऑफर सच में काम कर रहा है या नहीं। क्या मैं भेज दूँ?
+GET /soundbox/state        200  ok
+    audio rendered from cache, no network
+GET /soundbox              200  ok  (both fallback buttons present)
+GET /soundbox/audio        200  ok  (938732 bytes of wav)
+POST /soundbox/button      200  ok
+    approved via button, transcript 'Haan, bhej do.'
+POST /campaign/launch      200  ok
+    campaign camp_154001f721, 10 treated and 2 held back
+POST /measure              200  ok
+    not_ready, as expected until Step 5
+GET /decisions             200  ok
+    8 decision lines logged: health, triage, generate, simulate, call, voice_reply, campaign_launch, measure
+
+ALL STEPS PASSED OFFLINE, NO NETWORK TOUCHED
+```
+
+### Test suite
+
+```
+$ python -m pytest tests/ -q
+86 passed in 6.77s
+
+$ python -m scripts.check_data
+all checks passed
+```
+
+**Next: Step 5, holdout assignment, dispatch, measurement and the learning curve.**
+
+---
+
 ## Step 3: LLM generation and the call brief (Thu 17 Sep, night)
 
 Status: **done, 40 tests pass, Step 1 and Step 2 checks all still pass. Sarvam is live.**
