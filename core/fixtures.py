@@ -68,3 +68,22 @@ PLACEHOLDER_CANDIDATES = [
                             "{shop_name} pe {validity_days} din tak.",
     },
 ]
+
+
+# The call script the agent falls back to if the LLM is unreachable or its script keeps
+# tripping the number guard. Same placeholders, same contract: code fills every figure.
+FALLBACK_CALL_SCRIPT = (
+    "नमस्ते {merchant_name} भाई। "
+    "आपके {lapsed_count} रेगुलर "
+    "ग्राहक काफी दिन "
+    "से नहीं आए। महीने "
+    "का लगभग {value_at_risk} का "
+    "नुकसान हो रहा है। "
+    "मैं {treated_count} लोगों को "
+    "{offer} भेज दूं, और {holdout_count} "
+    "लोगों को जानबूझकर "
+    "छोड़ दूं ताकि पता "
+    "चले कि ऑफर से फर्क "
+    "पड़ा या नहीं। "
+    "भेज दूं?"
+)

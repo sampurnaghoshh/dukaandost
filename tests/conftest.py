@@ -32,3 +32,21 @@ def ground_truth():
 @pytest.fixture(scope="session")
 def triage_result(conn):
     return triage.score(MERCHANT_ID, conn=conn)
+
+
+@pytest.fixture
+def no_network(monkeypatch):
+    """Hard blocks HTTP so a test cannot quietly reach Sarvam.
+
+    The suite must be runnable on a plane, on venue wifi, and without spending credit.
+    Anything needing the model reads the recorded cache in data/llm_cache.
+    """
+    import httpx
+
+    def blocked(*args, **kwargs):
+        raise AssertionError("this test tried to reach the network")
+
+    monkeypatch.setattr(httpx.Client, "post", blocked)
+    monkeypatch.setattr(httpx, "post", blocked, raising=False)
+    monkeypatch.setenv("LLM_MODE", "replay")
+    return blocked

@@ -39,7 +39,7 @@ When you are asked to add something and it is not on the critical path below, sa
 
 ### 2. LLM access (5 min)
 
-Sarvam-M via the same key, `/v1/chat/completions`, OpenAI-compatible. One key covers generation, STT and TTS. If Sarvam-M is unavailable or rate-limited, any LLM works for candidate generation; it is a swappable component.
+`sarvam-105b` via the same key, `POST https://api.sarvam.ai/v1/chat/completions`, OpenAI-compatible. One key covers generation, STT and TTS. **Sarvam-M is deprecated and no longer served**, confirmed against the docs on 17 September 2026; `sarvam-105b` is the flagship and `sarvam-105b-conversations` is the variant tuned for voice agents. There is no documented `response_format` or JSON schema parameter, so ask for JSON in the prompt and parse defensively. The model thinks by default and the thinking counts against `max_tokens`, so send `reasoning_effort: null` for structured output. If Sarvam is unavailable or rate-limited, any LLM works for candidate generation; it is a swappable component.
 
 ### 3. n8n Cloud (10 min, HIGH PRIORITY)
 
@@ -164,7 +164,7 @@ Keep this true in the code. If you ever find yourself asking an LLM to output a 
 ## Tech stack
 
 - **Python 3.11+**, FastAPI backend
-- **Sarvam AI**: Voice Agents for the outbound call (number rented from Sarvam; Exotel BYO is ruled out, see Hour Zero), Indic STT/TTS, Sarvam-M for generation. The agent's **API tool** calls our backend mid-conversation to launch the campaign.
+- **Sarvam AI**: Voice Agents for the outbound call (number rented from Sarvam; Exotel BYO is ruled out, see Hour Zero), Indic STT/TTS, `sarvam-105b` for generation. The agent's **API tool** calls our backend mid-conversation to launch the campaign.
 - **Cognee**: per-merchant memory and campaign history
 - **n8n**: nightly trigger, call dispatch, webhook branching on approved/declined/no-answer, holdout assignment, 72h measurement job
 - **pandas, scikit-learn**: triage and simulation

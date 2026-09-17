@@ -1,0 +1,21 @@
+{
+  "label": "call_script_retry",
+  "request": {
+    "model": "sarvam-105b",
+    "messages": [
+      {
+        "role": "system",
+        "content": "You write what an automated assistant says on the phone to a small shopkeeper in India. The shopkeeper is busy and standing at his stall. Speak the way a helpful younger relative would: warm, direct, no jargon, no sales patter."
+      },
+      {
+        "role": "user",
+        "content": "Write the script for a phone call that lasts about ten seconds. The assistant greets the shopkeeper, tells him some of his regular customers have stopped coming, says roughly what that is costing him a month, proposes sending them an offer, mentions that a small group will deliberately be left out so the shop can tell whether the offer actually worked, and then asks permission in a way he can answer with one word.\n\nHARD RULES. Breaking any of these makes the script unusable:\n1. Write NO numbers anywhere, in any script or spelling. No digits, no Devanagari digits, no percent sign, no rupee sign.\n2. Every figure must be a placeholder in curly braces. Use ALL SIX of these, and no others: merchant_name, lapsed_count, value_at_risk, offer, treated_count, holdout_count. An arithmetic engine fills them in before the call is placed. Greet the shopkeeper by name with merchant_name, and say how many people will be messaged with treated_count.\n3. Natural spoken Hindi, Devanagari script, Hinglish words where a shopkeeper would really use them.\n4. One short paragraph. It has to fit in about ten seconds of speech.\n\nAnswer with JSON only, no explanation, in this shape:\n{\"script\": \"<the Hindi script>\"}\n\n\nYour previous answer was rejected for these reasons. Fix every one of them and return the whole script again:\n- leaves out required placeholders: lapsed_count"
+      }
+    ],
+    "temperature": 0.4,
+    "max_tokens": 3000,
+    "seed": 20260917,
+    "reasoning_effort": null
+  },
+  "content": "\n{\"script\": \"नमस्ते {merchant_name} जी, आपके {lapsed_count} पुराने रेगुलर कस्टमर आना बंद कर गए हैं, जिससे आपको हर महीने करीब {value_at_risk} का नुकसान हो रहा है। अगर हम उनके पास एक {offer} भेजें तो कैसा रहेगा? हम सिर्फ {treated_count} लोगों को ही मैसेज करेंगे, बाकी {holdout_count} को बाहर रखेंगे ताकि हमें पता चले कि ऑफर सच में काम कर रहा है या नहीं। क्या मैं भेज दूँ?\"}"
+}

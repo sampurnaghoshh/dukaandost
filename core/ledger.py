@@ -145,3 +145,15 @@ def raw_name_variants(conn: sqlite3.Connection, merchant_id: str, true_item: str
         (merchant_id, true_item),
     ).fetchall()
     return [row["raw_item_name"] for row in rows]
+
+
+def raw_item_names(conn: sqlite3.Connection, merchant_id: str) -> list:
+    """Every distinct spelling the shop has ever typed, most used first.
+
+    Deliberately does not touch true_item. Resolving these back to one product per group is
+    the LLM's job, and true_item exists only so the test suite can mark its homework.
+    """
+    rows = conn.execute(
+        "SELECT raw_item_name, COUNT(*) AS n FROM transactions WHERE merchant_id = ? "
+        "GROUP BY raw_item_name ORDER BY n DESC", (merchant_id,)).fetchall()
+    return [row["raw_item_name"] for row in rows]

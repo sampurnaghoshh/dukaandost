@@ -1,0 +1,21 @@
+{
+  "label": "resolve_items",
+  "request": {
+    "model": "sarvam-105b",
+    "messages": [
+      {
+        "role": "system",
+        "content": "You clean up point of sale data for small Indian shops. Shopkeepers type the same product many different ways, in English, in Hindi, in Roman Hindi, with different capitalisation and sometimes with the price stuck on the end. Group them."
+      },
+      {
+        "role": "user",
+        "content": "Here are the raw item names typed at one tea stall. Map every single one to a canonical product key.\n\nRules:\n1. The canonical key is lower case English, words joined by underscores, for example chai or filter_coffee or vada_pav.\n2. Names that mean the same product must get the same key, whatever the spelling, script or trailing price.\n3. Names that mean different products must get different keys.\n4. Every raw name in the list must appear exactly once as a key in your mapping.\n\nAnswer with JSON only, no explanation, in this shape:\n{\"mapping\": {\"<raw name>\": \"<canonical key>\"}}\n\nRaw item names:\n- BISCUIT\n- BUN MASKA\n- CHAI\n- CHAI 10\n- COFFEE\n- Chai Spl\n- Filter Coffee\n- SAMOSA 15\n- Samosa\n- VADAPAV\n- Vada Pav 20\n- biscuit\n- biscut 10\n- biskut\n- bun maska\n- bun-maska\n- bunmaska\n- chai\n- chai 10\n- chai spl 12\n- chay\n- cofee\n- coffee\n- cutting chai\n- filter kaapi\n- kaapi\n- parle g\n- samosa\n- samosa 2pc\n- smosa\n- tea\n- tea spl\n- vada pav\n- vada-pav\n- wada pav\n- कॉफी\n- चाय\n- बन मस्का\n- बिस्कुट\n- वडा पाव\n- समोसा"
+      }
+    ],
+    "temperature": 0.1,
+    "max_tokens": 3000,
+    "seed": 20260917,
+    "reasoning_effort": null
+  },
+  "content": "\n```json\n{\n  \"mapping\": {\n    \"BISCUIT\": \"biscuit\",\n    \"BUN MASKA\": \"bun_maska\",\n    \"CHAI\": \"chai\",\n    \"CHAI 10\": \"chai\",\n    \"COFFEE\": \"coffee\",\n    \"Chai Spl\": \"chai\",\n    \"Filter Coffee\": \"filter_coffee\",\n    \"SAMOSA 15\": \"samosa\",\n    \"Samosa\": \"samosa\",\n    \"VADAPAV\": \"vada_pav\",\n    \"Vada Pav 20\": \"vada_pav\",\n    \"biscuit\": \"biscuit\",\n    \"biscut 10\": \"biscuit\",\n    \"biskut\": \"biscuit\",\n    \"bun maska\": \"bun_maska\",\n    \"bun-maska\": \"bun_maska\",\n    \"bunmaska\": \"bun_maska\",\n    \"chai\": \"chai\",\n    \"chai 10\": \"chai\",\n    \"chai spl 12\": \"chai\",\n    \"chay\": \"chai\",\n    \"cofee\": \"coffee\",\n    \"coffee\": \"coffee\",\n    \"cutting chai\": \"chai\",\n    \"filter kaapi\": \"filter_coffee\",\n    \"kaapi\": \"filter_coffee\",\n    \"parle g\": \"biscuit\",\n    \"samosa\": \"samosa\",\n    \"samosa 2pc\": \"samosa\",\n    \"smosa\": \"samosa\",\n    \"tea\": \"chai\",\n    \"tea spl\": \"chai\",\n    \"vada pav\": \"vada_pav\",\n    \"vada-pav\": \"vada_pav\",\n    \"wada pav\": \"vada_pav\",\n    \"कॉफी\": \"coffee\",\n    \"चाय\": \"chai\",\n    \"बन मस्का\": \"bun_maska\",\n    \"बिस्कुट\": \"biscuit\",\n    \"वडा पाव\": \"vada_pav\",\n    \"समोसा\": \"samosa\"\n  }\n}\n```"
+}

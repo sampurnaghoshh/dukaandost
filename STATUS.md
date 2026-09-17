@@ -2,6 +2,216 @@
 
 Build log for Dukaan Dost. Newest step at the top.
 
+## Step 3: LLM generation and the call brief (Thu 17 Sep, night)
+
+Status: **done, 40 tests pass, Step 1 and Step 2 checks all still pass. Sarvam is live.**
+
+### Sarvam findings, read off docs.sarvam.ai on 17 Sep 2026
+
+| | |
+|---|---|
+| Endpoint | `POST https://api.sarvam.ai/v1/chat/completions` |
+| Auth header | `api-subscription-key`, confirmed. `Authorization: Bearer` also accepted |
+| Auth failure | 403, not 401, exactly as CLAUDE.md warned |
+| Model | **`sarvam-105b`**. `sarvam-105b-conversations` is the voice agent variant |
+| JSON output | **No `response_format`, no `json_schema`, no JSON mode documented anywhere** |
+| Parameters | messages, temperature, top_p, max_tokens, seed, stop, reasoning_effort, wiki_grounding, presence_penalty, frequency_penalty |
+
+Two findings that cost real time and are worth knowing before Friday:
+
+1. **Sarvam-M is deprecated and no longer served.** CLAUDE.md named it as the generation
+   model. The docs now say plainly that it has been removed from the Chat Completions API
+   and to migrate to `sarvam-105b`. CLAUDE.md is corrected.
+2. **The model thinks by default, and the thinking is billed against `max_tokens`.** The
+   first live call came back with `content: null`, a populated `reasoning_content` and
+   `finish_reason: length`: it had spent the entire token budget deliberating and never
+   answered. Sending `reasoning_effort: null` disables reasoning completely and fixes it.
+   For prompts that want a fixed JSON shape rather than deliberation this is the right
+   setting anyway, and it is faster and cheaper.
+
+Because there is no JSON mode, structure is asked for in the prompt and enforced on our
+side: strip code fences by slicing, `json.loads`, validate with pydantic. No regex touches
+a model response anywhere in the codebase.
+
+### What was built
+
+- **`core/llm.py`**, new. Sarvam client, sixty second timeout, one retry on timeouts, 429
+  and 5xx, immediate stop on 403. `LLM_MODE` is live, record or replay. Successful
+  responses are saved to `data/llm_cache/<hash>.json`, keyed on a hash of the exact
+  request. The key is read from the environment and never printed, logged, returned in an
+  error message or written to the cache, and there is a test that the cache files contain
+  neither the key nor the header name.
+- **`core/generate.py`**, now real. `resolve_items()`, `propose()`, `call_script()`, the
+  number guard, and the fillers that put code's numbers into the model's sentences.
+- **`core/holdout.py`**. `HOLDOUT_SHARE = 0.15` and a counting helper. No assignment logic
+  yet, that is Step 5.
+- **`voice/base.py`**. `Brief`, `BriefNumbers` and `Decision` as pydantic models, plus the
+  `dial()` signature that raises NotImplementedError. No backend yet.
+- **`core/simulate.py`**, corrected. See below.
+- **`core/run_night.py`**, rewired. Generation, simulation, brief, filled Hindi script.
+- **`tests/test_generate.py`**, 18 new tests. Every one runs with httpx hard blocked.
+
+### 1. The simulator correctness fix
+
+The old single rate was wrong, and the instruction to split it was right. It shrank zero
+returns out of twelve toward a prior that was itself a guess about how people respond to an
+offer, so "would have come back anyway" and "came back because we called" were the same
+number. The holdout exists precisely to tell those apart, so folding them together made the
+measurement in Step 5 unable to correct anything.
+
+Now there are two, and they never touch:
+
+```
+baseline_return_rate  0.0500  MEASURED  12 unprompted lapse episodes in this shop's ledger,
+                                        0 returned, shrunk toward a 0.08 prior worth 20
+                                        observations
+offer_uplift          PRIOR             PRIOR_OFFER_UPLIFT = LOW 0.08, MEDIUM 0.14,
+                                        HIGH 0.20, additive on top of baseline
+```
+
+Every episode behind the baseline is genuinely unprompted, because this shop has never run
+a campaign. Incremental returners are `treated_count x offer_uplift`. The discount is paid
+on baseline plus incremental, because a coupon does not ask why somebody came back. Only
+the treated group is priced at all, since the holdout is never messaged.
+
+Gap shaped actions get gap shaped priors, `PRIOR_OFFPEAK_GAP_CAPTURE` and
+`PRIOR_ATTACH_GAP_CAPTURE`, expressed as the share of a **measured** gap an offer closes.
+They cannot invent headroom that the shop's own data does not show.
+
+**Two of the three expected outcomes held, one moved. Reporting it rather than tuning it.**
+
+| Expected | Result |
+|---|---|
+| Winback still ranks first | Yes, and it is the only accepted action |
+| The fifty percent winback still refused | Yes, on both the margin floor and negative profit |
+| Tuesday stays marginal | Marginal, but it crossed zero: was +3.91, now -8.23, so it is now refused |
+
+The Tuesday flip is a consequence of the fix, not of tuning. Three things moved against it
+at once and no constant was touched to make it happen: the old multiplicative uplift
+applied to the whole slot baseline, whereas the new additive capture applies only to the
+measured gap; the discount is now charged against baseline plus incremental rather than a
+multiplied total; and only 85 percent of the segment is priced now that the holdout is
+carved out. A campaign that was worth four rupees was always inside the noise, and the
+corrected arithmetic simply puts it on the other side of zero. The attach upsell moved the
+same way, from +268.96 to -103.00, for the same reason. Both refusals are honest: paying a
+discount to everyone who already attaches a snack, in order to win a few more, does lose
+money.
+
+### 2. Record and replay
+
+`LLM_MODE=replay` is the demo day insurance policy. With `httpx.Client.post` replaced by a
+function that raises, the entire nightly loop runs to completion and prints identical
+output, because every model answer comes from `data/llm_cache/`. The cache is committed, so
+it works on a fresh clone with no key at all. There is a test for exactly this, and another
+proving replay refuses to invent an answer it has not got rather than silently falling back.
+
+### 3. What the model actually produced
+
+**Item resolution: 38 of 41 raw spellings clustered correctly, 92.7 percent.** All eleven
+chai variants collapsed to one key, including `CHAI 10`, `tea spl`, `chay` and the
+Devanagari `चाय`. The only errors are three coffee names: it split `filter kaapi`, `kaapi`
+and `Filter Coffee` away from `coffee`, `cofee` and `कॉफी`. That is arguably the model being
+right and our synthetic data being wrong, since filter coffee and instant coffee are
+genuinely different drinks in Bengaluru, but it is scored as an error because the ground
+truth says one product.
+
+**The model chose a HIGH offer level and the simulator priced it at 107.02 rupees**, where
+the hand written LOW placeholder was worth 148.03. The model is not optimising the discount
+depth, it is picking a vibe, and code turns the vibe into a percentage. Worth noting for
+Friday: having the simulator price all three levels of each proposed action and keep the
+best is a small change and a genuine improvement, but it is not what Step 3 asked for and
+the numbers above are what the system actually does today.
+
+### 4. The number guard
+
+Implemented with `string.Formatter().parse()`, which hands back literal text and
+placeholder names separately, so the check needs no regex. It rejects ASCII digits,
+Devanagari digits, the percent sign and the rupee sign anywhere in literal text, and also
+rejects placeholders code cannot fill and malformed braces. A tripped guard gets one retry
+that tells the model exactly what was wrong, then the candidate is dropped and logged.
+
+The call script has a stricter rule still: all six placeholders are **required**, not merely
+allowed. The first script the model wrote omitted `merchant_name` and `treated_count`, which
+would have had the agent ask the merchant to approve a campaign without telling him how many
+people it would message. The guard caught it, the retry fixed it.
+
+### Decisions made
+
+1. **`action_type` is a free string, not an enum.** The open action space is the "best use
+   of AI" argument, and the simulator already refuses what it cannot price. Constraining
+   the field would have traded that away for a schema that validates more often.
+2. **`offer_item` is resolved against the menu, not trusted.** The model returned "a
+   complimentary bun" as a product key. Code now accepts only a key that appears in the
+   resolved product list and falls back to the segment anchor otherwise.
+3. **`message_template` defaults to empty rather than being a required field.** The model
+   dropped it entirely on the first attempt and pydantic rejected the whole batch, which
+   threw away four good candidates over one missing field. Now a missing message is a
+   candidate level problem that the retry can fix and the guard can drop.
+4. **The owner's name is the first word of the shop name.** The ledger stores "Ramesh Tea
+   Stall" and has no proprietor field, and "Namaste Ramesh Tea Stall ji" is not a sentence
+   anyone would say. `owner_name()` is a documented demo stand in that a real merchant
+   profile removes.
+5. **`seed` is sent on every request.** Sarvam documents it for repeatable results, which
+   makes the record and replay cache keys meaningful rather than a lucky coincidence.
+6. **The customer id stands in for the customer name** in the sample messages. Inventing
+   names would be inventing data, and the privacy answer is that the merchant never sees
+   the identity anyway.
+
+### Verified, not assumed
+
+- Live call to Sarvam succeeded, model `sarvam-105b`, no 403.
+- Replay with `httpx.Client.post` raising runs the full loop and exits zero.
+- No cache file contains the key or the string `api-subscription-key`.
+- `.env` was never opened, printed or edited. Only `.env.example` was written, and it
+  carries variable names and the model id, no values.
+- Network traffic was limited to `docs.sarvam.ai` and `api.sarvam.ai`.
+
+### Word for word output
+
+```
+CALL SCRIPT TEMPLATE, as sarvam-105b wrote it:
+नमस्ते {merchant_name} जी, आपके {lapsed_count} पुराने रेगुलर कस्टमर आना बंद कर गए हैं, जिससे आपको हर महीने करीब {value_at_risk} का नुकसान हो रहा है। अगर हम उनके पास एक {offer} भेजें तो कैसा रहेगा? हम सिर्फ {treated_count} लोगों को ही मैसेज करेंगे, बाकी {holdout_count} को बाहर रखेंगे ताकि हमें पता चले कि ऑफर सच में काम कर रहा है या नहीं। क्या मैं भेज दूँ?
+
+CALL SCRIPT FILLED, as the agent speaks it:
+नमस्ते Ramesh जी, आपके 12 पुराने रेगुलर कस्टमर आना बंद कर गए हैं, जिससे आपको हर महीने करीब ₹9,460 का नुकसान हो रहा है। अगर हम उनके पास एक 35% chhoot chai pe भेजें तो कैसा रहेगा? हम सिर्फ 10 लोगों को ही मैसेज करेंगे, बाकी 2 को बाहर रखेंगे ताकि हमें पता चले कि ऑफर सच में काम कर रहा है या नहीं। क्या मैं भेज दूँ?
+
+THREE CUSTOMER MESSAGES:
+template: नमस्ते {customer_name}, हमें आपकी बहुत याद आ रही है। {shop_name} पर {offer} के साथ आपका स्वागत है।
+  C0111  नमस्ते C0111, हमें आपकी बहुत याद आ रही है। Ramesh Tea Stall पर 35% chhoot chai pe के साथ आपका स्वागत है।
+  C0142  नमस्ते C0142, हमें आपकी बहुत याद आ रही है। Ramesh Tea Stall पर 35% chhoot chai pe के साथ आपका स्वागत है।
+  C0164  नमस्ते C0164, हमें आपकी बहुत याद आ रही है। Ramesh Tea Stall पर 35% chhoot chai pe के साथ आपका स्वागत है।
+
+RANKING
+baseline return rate  0.0500  MEASURED  12 unprompted lapse episodes in the ledger, 0 came back on their own, shrunk toward a 0.08 prior worth 20 observations
+offer uplift          PRIOR     {"LOW": 0.08, "MEDIUM": 0.14, "HIGH": 0.2}
+
+candidate                                level  baseline   uplift    inc rev   discount    profit
+lapsed_winback_lapsed_regulars_high_3    HIGH     0.0500   0.2000     964.89     422.14    107.02  ACCEPTED
+offpeak_fill_offpeak_slot_medium_1       MEDIUM   0.1463   0.1281      64.48      27.63     -8.23  REFUSED
+offpeak_fill_offpeak_slot_medium_5       MEDIUM   0.1463   0.1281      64.48      27.63     -8.23  REFUSED
+attach_upsell_anchor_buyers_low_2        LOW      0.0638   0.0090     244.22     197.16   -103.00  REFUSED
+attach_upsell_anchor_buyers_low_4        LOW      0.0638   0.0090     244.22     197.16   -103.00  REFUSED
+    offpeak_fill_offpeak_slot_medium_1: negative expected profit: -8.23 rupees over 30 days
+    offpeak_fill_offpeak_slot_medium_5: negative expected profit: -8.23 rupees over 30 days
+    attach_upsell_anchor_buyers_low_2: negative expected profit: -103.00 rupees over 30 days
+    attach_upsell_anchor_buyers_low_4: negative expected profit: -103.00 rupees over 30 days
+```
+
+### Test suite
+
+```
+$ python -m pytest tests/ -q
+........................................                                 [100%]
+40 passed in 2.32s
+
+$ python -m scripts.check_data
+all checks passed
+```
+
+**Next: Step 4, the voice layer.**
+
+---
+
 ## Step 2: triage and simulator (Thu 17 Sep, late evening)
 
 Status: **done, 22 tests pass, all Step 1 data checks still pass.**
