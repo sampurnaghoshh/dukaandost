@@ -1,0 +1,86 @@
+{
+  "_warning": "EVALUATION ONLY. Never read this file from core, voice, memory or api code.",
+  "merchant_id": "tea_stall_01",
+  "today": "2026-09-17",
+  "lapse_date": "2026-08-27",
+  "lapse_days_before_today": 21,
+  "value_window_days": 180,
+  "value_definition": "spend in the value_window_days ending at lapse_date, divided by window months",
+  "lapsed_customer_ids": [
+    "C0073",
+    "C0080",
+    "C0111",
+    "C0137",
+    "C0139",
+    "C0142",
+    "C0164",
+    "C0228",
+    "C0241",
+    "C0252",
+    "C0268",
+    "C0329"
+  ],
+  "combined_monthly_value": 9385.33,
+  "detail": [
+    {
+      "customer_id": "C0073",
+      "last_visit": "2026-08-24",
+      "avg_monthly_spend": 766.0
+    },
+    {
+      "customer_id": "C0080",
+      "last_visit": "2026-08-25",
+      "avg_monthly_spend": 757.5
+    },
+    {
+      "customer_id": "C0111",
+      "last_visit": "2026-08-24",
+      "avg_monthly_spend": 809.0
+    },
+    {
+      "customer_id": "C0137",
+      "last_visit": "2026-08-24",
+      "avg_monthly_spend": 723.67
+    },
+    {
+      "customer_id": "C0139",
+      "last_visit": "2026-08-24",
+      "avg_monthly_spend": 793.67
+    },
+    {
+      "customer_id": "C0142",
+      "last_visit": "2026-08-25",
+      "avg_monthly_spend": 807.0
+    },
+    {
+      "customer_id": "C0164",
+      "last_visit": "2026-08-25",
+      "avg_monthly_spend": 808.33
+    },
+    {
+      "customer_id": "C0228",
+      "last_visit": "2026-08-23",
+      "avg_monthly_spend": 779.0
+    },
+    {
+      "customer_id": "C0241",
+      "last_visit": "2026-08-25",
+      "avg_monthly_spend": 790.5
+    },
+    {
+      "customer_id": "C0252",
+      "last_visit": "2026-08-23",
+      "avg_monthly_spend": 767.67
+    },
+    {
+      "customer_id": "C0268",
+      "last_visit": "2026-08-25",
+      "avg_monthly_spend": 808.83
+    },
+    {
+      "customer_id": "C0329",
+      "last_visit": "2026-08-26",
+      "avg_monthly_spend": 774.17
+    }
+  ]
+}
