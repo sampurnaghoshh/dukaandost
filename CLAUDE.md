@@ -238,9 +238,11 @@ dukaan-dost/
 │   ├── dukaan.db            # SQLite ledger (gitignored)
 │   └── ground_truth.json    # evaluation only, never read by agent code
 ├── core/
+│   ├── ledger.py            # read only SQLite access shared by triage and simulate
 │   ├── triage.py            # arithmetic opportunity score
 │   ├── simulate.py          # candidate scoring, expected profit, guardrails
 │   ├── generate.py          # LLM candidate generation (no numbers)
+│   ├── fixtures.py          # placeholder candidates, replaced by generate.py in Step 3
 │   ├── holdout.py           # random assignment, 85/15
 │   ├── measure.py           # lift = treated minus control
 │   └── run_night.py         # one nightly cycle end to end, CLI entry point
