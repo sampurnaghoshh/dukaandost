@@ -6,103 +6,133 @@
 <title>Dukaan Dost</title>
 <style>
   :root {
-    --ink: #10221c;
-    --paper: #f6f4ee;
-    --card: #ffffff;
-    --line: #ddd8c9;
-    --muted: #5d6b64;
-    --green: #0f7a4f;
-    --red: #a32020;
-    --amber: #8a6d1f;
-    --blue: #1f4f8a;
+    /* Paytm palette. Every colour in the page and the chart comes from here, so one edit
+       changes the theme. Nothing is downloaded: these are hex values and system fonts. */
+    --navy:        #0B2559;   /* headings, the dark band, and all body text */
+    --navy-deep:   #081B41;   /* the band's lower edge */
+    --paytm-blue:  #00BAF2;   /* accents, rules, borders, the positive verdict */
+    --sky:         #5FC8F5;   /* secondary accents */
+    --sky-wash:    #E8F8FE;   /* tinted fills */
+    --white:       #FFFFFF;
+    --page:        #F4F6FA;   /* very light grey page */
+    --card:        #FFFFFF;
+    --line:        #DCE3EF;   /* borders, a navy tinted grey */
+    --muted:       #5A6B8C;   /* secondary text, navy leaning, 5.3:1 on white */
+    --faint:       #93A0B8;   /* struck through and held back text */
+
+    /* These two carry meaning and stay as they were. */
+    --amber:       #8A6D1F;   /* the silent night verdict */
+    --amber-wash:  #FBF3DF;
+    --red:         #A32020;   /* a campaign that measured below zero */
+
+    /* Chart. Read by the SVG so the theme is defined in one place only. */
+    --chart-grid:  #E1E7F2;
+    --chart-zero:  #AAB6CC;
   }
   * { box-sizing: border-box; }
   html { -webkit-text-size-adjust: 100%; }
   body {
     margin: 0; padding: 22px 18px 70px;
-    background: var(--paper); color: var(--ink);
+    background: var(--page); color: var(--navy);
     font-family: "Segoe UI", Roboto, "Noto Sans Devanagari", system-ui, sans-serif;
     font-size: 17px; line-height: 1.5;
+    font-variant-numeric: tabular-nums;
   }
   .wrap { max-width: 1080px; margin: 0 auto; }
 
+  /* The navy band. Same element, same order, just filled. */
   header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 14px;
-           border-bottom: 3px solid var(--ink); padding-bottom: 12px; margin-bottom: 26px; }
-  h1 { font-size: 30px; margin: 0; letter-spacing: -0.02em; }
-  .tagline { color: var(--muted); font-size: 16px; }
-  .live { margin-left: auto; font-size: 13px; color: var(--muted); }
+           background: var(--navy); color: var(--white);
+           border-bottom: 4px solid var(--paytm-blue);
+           border-radius: 12px 12px 0 0;
+           padding: 20px 22px; margin-bottom: 26px; }
+  h1 { font-size: 30px; margin: 0; letter-spacing: -0.02em; color: var(--white);
+       font-weight: 800; }
+  .tagline { color: var(--sky); font-size: 16px; }
+  .live { margin-left: auto; font-size: 13px; color: var(--sky); }
   .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%;
-         background: var(--green); margin-right: 6px; }
+         background: var(--paytm-blue); margin-right: 6px; }
 
   section { background: var(--card); border: 1px solid var(--line); border-radius: 12px;
             padding: 20px 22px; margin-bottom: 20px; }
   h2 { font-size: 13px; letter-spacing: 0.13em; text-transform: uppercase;
        color: var(--muted); margin: 0 0 16px; font-weight: 700; }
-  h2 .n { color: var(--ink); background: var(--paper); border: 1px solid var(--line);
+  h2 .n { color: var(--white); background: var(--navy); border: 1px solid var(--navy);
           border-radius: 5px; padding: 1px 7px; margin-right: 9px; }
 
+  /* Rupee figures stay dark navy on light so they read from six feet. */
   .huge { font-size: 46px; font-weight: 800; letter-spacing: -0.03em; line-height: 1.05;
-          font-variant-numeric: tabular-nums; }
+          font-variant-numeric: tabular-nums; color: var(--navy); }
   .big { font-size: 30px; font-weight: 700; font-variant-numeric: tabular-nums;
-         letter-spacing: -0.02em; }
+         letter-spacing: -0.02em; color: var(--navy); }
   .sub { color: var(--muted); font-size: 15px; }
-  .sentence { font-size: 20px; line-height: 1.5; margin: 0 0 10px; }
+  .sentence { font-size: 20px; line-height: 1.5; margin: 0 0 10px; color: var(--navy); }
   .sentence b { font-variant-numeric: tabular-nums; }
-  .hindi { font-size: 23px; line-height: 1.75; }
+  .hindi { font-size: 23px; line-height: 1.75; color: var(--navy); }
 
   .verdict { display: inline-block; font-size: 24px; font-weight: 800; letter-spacing: 0.02em;
              padding: 12px 20px; border-radius: 10px; margin-top: 6px; }
-  .verdict.call { background: #e6f2ec; color: var(--green); border: 2px solid var(--green); }
-  .verdict.quiet { background: #f2f0e6; color: var(--amber); border: 2px solid var(--amber); }
+  /* Navy on Paytm blue is 6.4:1, so the positive verdict is blue and still readable. */
+  .verdict.call { background: var(--paytm-blue); color: var(--navy);
+                  border: 2px solid var(--paytm-blue); }
+  .verdict.quiet { background: var(--amber-wash); color: var(--amber);
+                   border: 2px solid var(--amber); }
 
   .signal { border-left: 4px solid var(--line); padding: 4px 0 4px 14px; margin-bottom: 14px; }
-  .signal.full { border-left-color: var(--green); }
-  .signal .val { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .signal.full { border-left-color: var(--paytm-blue); }
+  .signal .val { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums;
+                 color: var(--navy); }
   .signal .kind { font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em;
                   color: var(--muted); }
 
   table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
   th { font-size: 12px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted);
-       text-align: right; padding: 6px 10px; font-weight: 700; border-bottom: 2px solid var(--line); }
+       text-align: right; padding: 6px 10px; font-weight: 700;
+       border-bottom: 2px solid var(--paytm-blue); }
   th.left, td.left { text-align: left; }
   td { padding: 10px; border-bottom: 1px solid var(--line); text-align: right; font-size: 17px; }
-  tr.refused td { color: #9a9a90; }
+  tr.refused td { color: var(--faint); }
   tr.refused .cand { text-decoration: line-through; }
-  .cand { font-weight: 700; font-size: 17px; }
+  .cand { font-weight: 700; font-size: 17px; color: var(--navy); }
   .seg { display: block; font-size: 13px; color: var(--muted); font-weight: 400;
          text-decoration: none; }
   .cell { display: inline-block; padding: 5px 9px; border-radius: 7px; min-width: 76px; }
-  .cell.chosen { background: var(--green); color: #fff; font-weight: 800; }
-  .cell.modelpick { outline: 2px dashed var(--blue); outline-offset: 1px; color: var(--blue);
+  .cell.chosen { background: var(--paytm-blue); color: var(--navy); font-weight: 800; }
+  .cell.modelpick { outline: 2px dashed var(--sky); outline-offset: 1px; color: var(--navy);
                     font-weight: 700; }
-  .cell.dead { color: #a8a8a0; }
+  .cell.dead { color: var(--faint); }
   .why { font-size: 13px; color: var(--red); display: block; margin-top: 3px; }
   .legend { font-size: 13px; color: var(--muted); margin-top: 14px; }
   .legend .swatch { display: inline-block; padding: 2px 8px; border-radius: 5px; margin-right: 5px; }
 
   .msgs { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; }
-  .msg { border: 1px solid var(--line); border-radius: 9px; padding: 12px 14px; background: #fff; }
+  .msg { border: 1px solid var(--line); border-radius: 9px; padding: 12px 14px;
+         background: var(--white); border-left: 4px solid var(--paytm-blue); }
   .msg .who { font-size: 15px; font-weight: 700; letter-spacing: 0; text-transform: none;
-              color: var(--ink); margin-bottom: 6px; }
+              color: var(--navy); margin-bottom: 6px; }
   .msg .cid { font-size: 11px; font-weight: 400; letter-spacing: 0.06em; color: var(--muted);
               margin-left: 8px; }
-  .msg.held { background: #f1f0ea; border-style: dashed; color: #8d8d84; }
-  .msg.held .who { color: #8d8d84; }
-  .msg.held .cid { color: #a5a59c; }
+  .msg.held { background: var(--page); border-style: dashed; border-left-color: var(--faint);
+              color: var(--faint); }
+  .msg.held .who { color: var(--faint); }
+  .msg.held .cid { color: var(--faint); }
   .held-note { font-style: italic; }
 
   .stats { display: flex; flex-wrap: wrap; gap: 34px; align-items: flex-end; }
   .stat .k { font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em;
              color: var(--muted); }
-  .eq { font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; margin-top: 14px; }
+  .eq { font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; margin-top: 14px;
+        color: var(--navy); }
   .eq .op { color: var(--muted); font-weight: 400; padding: 0 8px; }
 
   .note { font-size: 15px; color: var(--muted); margin-top: 14px; }
   .empty { color: var(--muted); font-size: 18px; font-style: italic; }
   .pill { display: inline-block; font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase;
-          border: 1px solid var(--line); border-radius: 20px; padding: 3px 11px; color: var(--muted); }
-  button { font: inherit; font-size: 15px; font-weight: 600; cursor: pointer; background: #fff;
-           border: 1px solid var(--line); border-radius: 8px; padding: 10px 18px; color: var(--ink); }
+          border: 1px solid var(--paytm-blue); border-radius: 20px; padding: 3px 11px;
+          color: var(--muted); background: var(--sky-wash); }
+  button { font: inherit; font-size: 15px; font-weight: 600; cursor: pointer;
+           background: var(--white); border: 2px solid var(--paytm-blue); border-radius: 8px;
+           padding: 10px 18px; color: var(--navy); }
   @media (max-width: 640px) { .huge { font-size: 34px; } body { font-size: 16px; } }
 </style>
 </head>
@@ -128,6 +158,20 @@
 "use strict";
 var LEVELS = ["LOW", "MEDIUM", "HIGH"];
 var el = function (id) { return document.getElementById(id); };
+
+/* The chart is inline SVG, and an SVG fill attribute cannot take a CSS variable, so it
+   reads them once from the stylesheet. The palette still lives in exactly one place. */
+var THEME = getComputedStyle(document.documentElement);
+function colour(name) { return THEME.getPropertyValue(name).trim(); }
+var C = {
+  navy: colour("--navy"),
+  blue: colour("--paytm-blue"),
+  sky: colour("--sky"),
+  muted: colour("--muted"),
+  red: colour("--red"),
+  grid: colour("--chart-grid"),
+  zero: colour("--chart-zero")
+};
 
 function esc(value) {
   if (value === null || value === undefined) { return ""; }
@@ -209,7 +253,7 @@ function panelReasoning(state) {
         + (cell.survives ? "" : " x") + "</span></td>";
     });
     html += "<td>" + (row.accepted
-      ? '<b style="color:var(--green)">' + esc(row.chosen_level) + "</b>"
+      ? '<b style="color:var(--navy)">' + esc(row.chosen_level) + "</b>"
       : '<span style="color:var(--red)">refused</span>'
         + '<span class="why">' + esc(shortReason(row.rejections)) + "</span>") + "</td></tr>";
   });
@@ -250,7 +294,7 @@ function panelCall(state) {
   var outcome = c.approved === true ? "APPROVED"
     : c.outcome === "declined" ? "DECLINED"
     : c.settled ? "UNDECIDED" : "WAITING FOR THE MERCHANT";
-  var colour = c.approved === true ? "var(--green)"
+  var tone = c.approved === true ? "var(--navy)"
     : c.outcome === "declined" ? "var(--red)" : "var(--amber)";
 
   var html = '<div class="sub">what the agent said, in Hindi, every figure filled by code</div>'
@@ -261,7 +305,7 @@ function panelCall(state) {
   html += '<span class="pill">' + esc(c.script_source) + " wrote the words</span>";
   html += '<div style="margin-top:20px"><div class="sub">what the merchant said</div>'
     + '<p class="hindi">' + esc(c.transcript || "nothing yet") + "</p></div>";
-  html += '<div class="big" style="color:' + colour + '">' + outcome + "</div>";
+  html += '<div class="big" style="color:' + tone + '">' + outcome + "</div>";
   if (c.via) { html += '<div class="sub">answered by ' + esc(c.via) + "</div>"; }
   return html;
 }
@@ -307,7 +351,7 @@ function panelMeasure(state) {
 
   html += '<div class="eq">' + pct(m.treated_rate, 0) + '<span class="op">minus</span>'
     + pct(m.control_rate, 0) + '<span class="op">=</span>'
-    + '<span style="color:' + (m.lift >= 0 ? "var(--green)" : "var(--red)") + '">'
+    + '<span style="color:' + (m.lift >= 0 ? "var(--navy)" : "var(--red)") + '">'
     + pct(m.lift, 0) + " lift</span></div>";
 
   html += '<div class="huge" style="margin-top:18px">' + rs(m.incremental_revenue)
@@ -367,23 +411,23 @@ function chartSvg(learning) {
   [0, 0.1, 0.2, 0.3, 0.4].forEach(function (v) {
     if (v < lo || v > hi) { return; }
     svg += '<line x1="' + L + '" y1="' + y(v) + '" x2="' + (W - R) + '" y2="' + y(v)
-      + '" stroke="#e3ded0" stroke-width="1"/>'
+      + '" stroke="' + C.grid + '" stroke-width="1"/>'
       + '<text x="' + (L - 10) + '" y="' + (y(v) + 5)
-      + '" text-anchor="end" font-size="14" fill="#5d6b64">' + v.toFixed(2) + "</text>";
+      + '" text-anchor="end" font-size="14" fill="' + C.muted + '">' + v.toFixed(2) + "</text>";
   });
 
   // zero line, so a negative measurement is obviously negative
   if (lo < 0 && hi > 0) {
     svg += '<line x1="' + L + '" y1="' + y(0) + '" x2="' + (W - R) + '" y2="' + y(0)
-      + '" stroke="#b9b2a0" stroke-width="2"/>';
+      + '" stroke="' + C.zero + '" stroke-width="2"/>';
   }
 
   // the hidden truth, a flat reference line
   if (truth !== null && truth !== undefined) {
     svg += '<line x1="' + L + '" y1="' + y(truth) + '" x2="' + (W - R) + '" y2="' + y(truth)
-      + '" stroke="#a32020" stroke-width="2.5" stroke-dasharray="9 6"/>'
+      + '" stroke="' + C.navy + '" stroke-width="2.5" stroke-dasharray="9 6"/>'
       + '<text x="' + (W - R) + '" y="' + (y(truth) - 10)
-      + '" text-anchor="end" font-size="15" font-weight="700" fill="#a32020">'
+      + '" text-anchor="end" font-size="15" font-weight="700" fill="' + C.navy + '">'
       + "hidden truth " + truth.toFixed(2) + ", the agent never sees it</text>";
   }
 
@@ -392,10 +436,10 @@ function chartSvg(learning) {
     if (row.actual_uplift === null || row.actual_uplift === undefined) { return; }
     var negative = row.actual_uplift < 0;
     svg += '<circle cx="' + x(i) + '" cy="' + y(row.actual_uplift) + '" r="7" fill="'
-      + (negative ? "#a32020" : "#1f4f8a") + '"/>';
+      + (negative ? C.red : C.sky) + '" stroke="' + C.navy + '" stroke-width="2"/>';
     if (negative) {
       svg += '<text x="' + x(i) + '" y="' + (y(row.actual_uplift) + 24)
-        + '" text-anchor="middle" font-size="13" fill="#a32020">measured below zero</text>';
+        + '" text-anchor="middle" font-size="13" fill="' + C.red + '">measured below zero</text>';
     }
   });
 
@@ -403,27 +447,31 @@ function chartSvg(learning) {
   var path = series.map(function (row, i) {
     return (i ? "L" : "M") + x(i) + " " + y(row.predicted_uplift);
   }).join(" ");
-  svg += '<path d="' + path + '" fill="none" stroke="#0f7a4f" stroke-width="4" '
+  svg += '<path d="' + path + '" fill="none" stroke="' + C.blue + '" stroke-width="4" '
     + 'stroke-linejoin="round"/>';
   series.forEach(function (row, i) {
     svg += '<circle cx="' + x(i) + '" cy="' + y(row.predicted_uplift)
-      + '" r="6" fill="#0f7a4f"/>';
+      + '" r="6" fill="' + C.blue + '"/>';
   });
 
   // campaign labels
   series.forEach(function (row, i) {
     svg += '<text x="' + x(i) + '" y="' + (H - B + 26)
-      + '" text-anchor="middle" font-size="15" fill="#5d6b64">' + row.sequence + "</text>";
+      + '" text-anchor="middle" font-size="15" fill="' + C.muted + '">' + row.sequence
+      + "</text>";
   });
   svg += '<text x="' + ((L + W - R) / 2) + '" y="' + (H - 8)
-    + '" text-anchor="middle" font-size="14" fill="#5d6b64">campaign</text>';
+    + '" text-anchor="middle" font-size="14" fill="' + C.muted + '">campaign</text>';
 
   // legend
   svg += '<g font-size="15">'
-    + '<circle cx="' + (L + 6) + '" cy="' + (T + 4) + '" r="6" fill="#0f7a4f"/>'
-    + '<text x="' + (L + 20) + '" y="' + (T + 9) + '" fill="#10221c">believed uplift</text>'
-    + '<circle cx="' + (L + 190) + '" cy="' + (T + 4) + '" r="6" fill="#1f4f8a"/>'
-    + '<text x="' + (L + 204) + '" y="' + (T + 9) + '" fill="#10221c">measured lift</text>'
+    + '<circle cx="' + (L + 6) + '" cy="' + (T + 4) + '" r="6" fill="' + C.blue + '"/>'
+    + '<text x="' + (L + 20) + '" y="' + (T + 9) + '" fill="' + C.navy
+    + '">believed uplift</text>'
+    + '<circle cx="' + (L + 190) + '" cy="' + (T + 4) + '" r="6" fill="' + C.sky
+    + '" stroke="' + C.navy + '" stroke-width="2"/>'
+    + '<text x="' + (L + 204) + '" y="' + (T + 9) + '" fill="' + C.navy
+    + '">measured lift</text>'
     + "</g>";
 
   svg += "</svg>";

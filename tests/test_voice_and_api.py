@@ -165,6 +165,12 @@ def test_the_recommended_candidate_is_the_highest_profit_survivor(conn, triage_r
 def client(no_network, tmp_path, monkeypatch):
     from api import main
     monkeypatch.setattr(main.run_night, "LOG_PATH", str(tmp_path / "decisions.jsonl"))
+    # Campaign memory goes in the temp directory. Without this the launch tests write real
+    # campaigns into data/memory.db, which is the database the demo reads, and a full test
+    # run quietly pushes the learning curve from six campaigns to eleven.
+    monkeypatch.setenv("DUKAAN_MEMORY_PATH", str(tmp_path / "memory.db"))
+    main._ANALYSIS_CACHE.clear()
+    main.local_soundbox.PENDING.clear()
     return TestClient(main.app)
 
 
