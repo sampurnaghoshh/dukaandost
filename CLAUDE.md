@@ -255,7 +255,8 @@ dukaan-dost/
 │   ├── sarvam_telephony.py
 │   └── local_soundbox.py
 ├── memory/
-│   └── store.py             # Cognee wrapper, Postgres/SQLite fallback
+│   ├── store.py             # campaign memory in SQLite, the demo path
+│   └── graph.py             # the memory interface, SQLite and Cognee backends
 ├── api/
 │   └── main.py              # FastAPI, incl. mid-call campaign endpoint
 ├── dashboard/               # judge view: reasoning trace, learning curve

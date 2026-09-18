@@ -131,6 +131,120 @@ Run it again after any restart of uvicorn or cloudflared.
 
 ---
 
+## Step 8: Cognee memory behind an interface (Sat 19 Sep, one hour timebox)
+
+Status: **interface done and tested, cognee itself not running. SQLite is the default and
+the demo path is untouched.** 209 tests pass, 1 skipped.
+
+### 1. What cognee needs, checked rather than assumed
+
+`cognify()` needs **two** separate providers, and they are not the same thing:
+
+| need | what it is for | can Sarvam do it |
+|---|---|---|
+| a chat model | pulling entities and relationships out of text | **yes**, `sarvam-105b` is OpenAI compatible and cognee routes through litellm, which takes a custom base URL |
+| an **embedding** model | turning those entities into vectors for the store | **no** |
+
+The second one is the blocker, and it is not close. Sarvam's own API index lists speech to
+text, text to speech, chat, translation and vision. Searching the whole index for
+`embed` case insensitively returns **zero matches**. There is no embeddings endpoint to point
+at. The dependency tree says the same thing from the other side: installing cognee pulls in
+`lancedb` and `pylance`, a vector database and its engine, which exist to hold embeddings.
+
+So cognee needs a provider we do not have. Per the instruction for this step, that is where
+it stops. The options would have been an OpenAI key, which costs money and which CLAUDE.md
+rules out, or a local embedding model, which is exactly the working around that the
+instruction said not to do.
+
+**A second, smaller blocker worth recording:** `pip install cognee` pulls roughly 175 MB of
+wheels, including `lancedb` at 104 MB and `pylance` at 46 MB. On the connection here that ran
+at 260 kB/s and did not finish inside the hour, twice. Even with an embedding provider, this
+is not something to install for the first time on demo morning.
+
+### 2. What is real
+
+`memory/graph.py`, with three operations and two backends:
+
+```
+write_campaign_outcome(merchant_id, campaign_id)   what was proposed, predicted, delivered
+merchant_history(merchant_id)                      everything this shop has taught us
+campaigns_like(merchant_id, action_type, segment_kind, offer_level)
+```
+
+`SqliteGraph` is complete, exercised and the default. It reads the tables `memory/store.py`
+already writes and returns a record shaped as **proposed, approved, predicted, delivered**,
+which is the promise in the deck. Against the six campaign memory:
+
+```
+backend : sqlite | sqlite campaign memory
+history : 6 campaigns
+first   : seq=1 lapsed_winback to lapsed_regulars at MEDIUM
+          predicted 0.140 profit 186.62
+          delivered 0.200 profit 364.33
+like    : 6 matching winbacks to lapsed regulars
+```
+
+`cognee_readiness()` reports exactly what is missing rather than failing, and `open_memory()`
+hands back SQLite with a note saying why when cognee cannot start. `MEMORY_BACKEND` selects,
+defaulting to `sqlite`.
+
+One schema change was needed: campaigns now store `segment_kind`, because querying past
+campaigns by segment is one of the three operations and the column did not exist. Added with
+a real migration, `ALTER TABLE` on a database that predates the column, since
+`CREATE TABLE IF NOT EXISTS` silently does nothing to a table that is already there.
+
+### 3. What is not real, plainly
+
+**`CogneeGraph` has never executed.** The class is written against cognee's documented
+`add()` and `cognify()` API, but cognee is not installed here, so not one line of it has run.
+It may well be wrong about the exact call shape. It is unexercised code, and the only reason
+it is committed rather than deleted is that the interface and the readiness probe around it
+are real and tested, and the fallback is proven.
+
+Nothing depends on it. The test that would compare the two backends **skips**, with the
+reason printed, rather than passing on a technicality:
+
+```
+10 passed, 1 skipped
+```
+
+### 4. The graph query that would have been the point, not demonstrated
+
+Requirement four was to show one thing the graph does that the table does not. **It is not
+shown, because cognee does not run here.** Writing an imaginary output would be worse than
+saying that.
+
+For the record, the query worth having was: *given a new candidate, find campaigns at any
+merchant that targeted a similar segment with a similar mechanic, and tell me what actually
+happened.* That is awkward in SQL because similar is not a join condition, and it is the
+thing a graph plus embeddings is genuinely better at. Today `campaigns_like()` does the exact
+match version of it, which is enough for one merchant and not enough for forty million.
+
+### 5. The demo path is untouched
+
+- `MEMORY_BACKEND` defaults to `sqlite` and a test asserts it.
+- Asking for `cognee` and not getting it returns a working memory plus an explanation, and a
+  test asserts the fallback returns **identical** history.
+- A test asserts `triage.py`, `generate.py`, `simulate.py`, `measure.py` and `holdout.py`
+  contain neither `memory.graph` nor `MEMORY_BACKEND`, so the backend cannot move a number.
+- A test asserts the learned response scale is identical with either backend set.
+- **cognee is deliberately not in `requirements.txt`.** Adding a 175 MB dependency that
+  cannot run would make a fresh clone slower and no more capable.
+
+If asked on stage: the memory layer is behind an interface with a graph backend written
+against it, the content is already there, and the thing standing between us and a live
+knowledge graph is that Sarvam has no embeddings endpoint and we chose not to add a second
+paid provider the night before.
+
+### Test suite
+
+```
+$ python -m pytest tests/ -q
+209 passed, 1 skipped in 64.50s
+```
+
+---
+
 ## Step 7: n8n orchestration (Fri 18 Sep, late afternoon)
 
 Status: **done, 166 tests pass, 23 of them checking the workflow JSON.**

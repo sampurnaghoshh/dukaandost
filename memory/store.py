@@ -35,6 +35,7 @@ CREATE TABLE IF NOT EXISTS campaigns (
     offer_level     TEXT,
     discount_pct    REAL,
     offer_applies_to TEXT,
+    segment_kind    TEXT,
     segment_size    INTEGER,
     treated_count   INTEGER,
     holdout_count   INTEGER,
@@ -105,12 +106,27 @@ CREATE INDEX IF NOT EXISTS idx_outcomes_campaign ON outcomes (campaign_id);
 """
 
 
+# Columns added after the first campaign memory was written. CREATE TABLE IF NOT EXISTS does
+# nothing to a table that already exists, so a database from an earlier run needs these added
+# by hand or every read of them fails.
+LATE_COLUMNS = (("campaigns", "segment_kind", "TEXT"),)
+
+
+def _migrate(conn: sqlite3.Connection) -> None:
+    for table, column, kind in LATE_COLUMNS:
+        existing = {row["name"] for row in conn.execute("PRAGMA table_info(%s)" % table)}
+        if column not in existing:
+            conn.execute("ALTER TABLE %s ADD COLUMN %s %s" % (table, column, kind))
+    conn.commit()
+
+
 def connect(path: str | None = None) -> sqlite3.Connection:
     target = path or os.getenv("DUKAAN_MEMORY_PATH") or DEFAULT_MEMORY_PATH
     os.makedirs(os.path.dirname(target), exist_ok=True)
     conn = sqlite3.connect(target)
     conn.row_factory = sqlite3.Row
     conn.executescript(SCHEMA)
+    _migrate(conn)
     return conn
 
 
@@ -147,10 +163,11 @@ def record_campaign(conn: sqlite3.Connection, campaign_id: str, merchant_id: str
     sequence = next_sequence(conn, merchant_id)
     conn.execute(
         "INSERT OR REPLACE INTO campaigns VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "
-        "?, ?, ?, ?, ?, ?)",
+        "?, ?, ?, ?, ?, ?, ?)",
         (campaign_id, merchant_id, sequence, chosen.get("candidate_id"),
          chosen.get("action_type"), estimates.get("offer_level"), estimates.get("discount_pct"),
-         (chosen.get("offer") or {}).get("applies_to"), estimates.get("segment_size"),
+         (chosen.get("offer") or {}).get("applies_to"),
+         (chosen.get("target_segment") or {}).get("kind"), estimates.get("segment_size"),
          estimates.get("treated_count"), estimates.get("holdout_count"),
          estimates.get("baseline_response_rate"), estimates.get("offer_uplift"),
          estimates.get("incremental_responses"), estimates.get("incremental_revenue"),
