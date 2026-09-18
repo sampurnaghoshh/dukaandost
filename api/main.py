@@ -137,6 +137,29 @@ def _notify_callback(call_id: str, decision) -> None:
              % type(exc).__name__, merchant_id=decision.merchant_id, call_id=call_id)
 
 
+def _resolve_call_id(merchant_id: str, call_id: str | None) -> tuple:
+    """Which call to launch from, and where that answer came from.
+
+    An explicit call id always wins. Without one, the most recently opened call for this
+    merchant is used, because the Sarvam agent tool fires mid conversation and does not
+    reliably have the id to hand when it does. Only calls that actually have a chosen
+    candidate count, since a call with nothing decided has nothing to dispatch.
+
+    The source is returned alongside so the decision log records whether the campaign was
+    launched against a call the caller named or one this function picked. A dispatch that
+    guessed which call it belonged to should say so.
+    """
+    if call_id:
+        return call_id, "explicit"
+
+    open_calls = [call for call in local_soundbox.PENDING.values()
+                  if call.get("merchant_id") == merchant_id and call.get("chosen")]
+    if not open_calls:
+        return None, "none_open"
+    latest = max(open_calls, key=lambda call: call["started_at"])
+    return latest["call_id"], "resolved_latest_open"
+
+
 def _resolve_today(conn, merchant_id: str, today: str | None) -> date:
     return date.fromisoformat(today) if today else ledger.data_as_of(conn, merchant_id)
 
@@ -316,19 +339,26 @@ def post_campaign_launch(request: LaunchRequest) -> dict:
     for every treated customer. Nothing is sent: WhatsApp Business API is the production
     path and needs business verification plus template approval.
     """
+    call_id, call_id_source = _resolve_call_id(request.merchant_id, request.call_id)
+
     if not request.approved:
         _log("campaign_launch", "declined", "merchant declined, nothing dispatched",
-             merchant_id=request.merchant_id, call_id=request.call_id,
-             candidate_id=request.candidate_id, transcript=request.transcript)
-        return {"status": "declined", "campaign_id": None,
+             merchant_id=request.merchant_id, call_id=call_id or "",
+             call_id_source=call_id_source, candidate_id=request.candidate_id,
+             transcript=request.transcript)
+        return {"status": "declined", "campaign_id": None, "call_id": call_id,
                 "reason": "the merchant did not approve"}
 
-    call = local_soundbox.PENDING.get(request.call_id)
+    call = local_soundbox.PENDING.get(call_id) if call_id else None
     brief: Brief | None = call["brief"] if call else None
     chosen = (call or {}).get("chosen")
     if brief is None or chosen is None:
-        raise HTTPException(status_code=404,
-                            detail="no open call %s to launch from" % request.call_id)
+        detail = ("no open call %s to launch from" % call_id if call_id
+                  else "no open call for %s to launch from" % request.merchant_id)
+        _log("campaign_launch", "no_open_call", detail,
+             merchant_id=request.merchant_id, call_id=call_id or "",
+             call_id_source=call_id_source)
+        raise HTTPException(status_code=404, detail=detail)
 
     conn = ledger.connect()
     memory = store.connect()
@@ -350,7 +380,7 @@ def post_campaign_launch(request: LaunchRequest) -> dict:
     CAMPAIGNS[campaign_id] = {
         "campaign_id": campaign_id,
         "merchant_id": request.merchant_id,
-        "call_id": request.call_id,
+        "call_id": call_id,
         "candidate_id": chosen.get("candidate_id"),
         "approved_at": datetime.now().isoformat(timespec="seconds"),
         "source": request.source,
@@ -361,7 +391,8 @@ def post_campaign_launch(request: LaunchRequest) -> dict:
          "campaign %s approved on the call, %d messaged and %d held back"
          % (campaign_id, launched["dispatch"]["rendered"],
             launched["assignment"]["holdout_count"]),
-         merchant_id=request.merchant_id, call_id=request.call_id, campaign_id=campaign_id,
+         merchant_id=request.merchant_id, call_id=call_id, call_id_source=call_id_source,
+         campaign_id=campaign_id,
          candidate_id=chosen.get("candidate_id"), predicted=launched["predicted"],
          assignment={"treated": launched["assignment"]["treated"],
                      "control": launched["assignment"]["control"],
@@ -370,6 +401,8 @@ def post_campaign_launch(request: LaunchRequest) -> dict:
     return {
         "status": "approved",
         "campaign_id": campaign_id,
+        "call_id": call_id,
+        "call_id_source": call_id_source,
         "sequence": launched["sequence"],
         "treated_count": launched["assignment"]["treated_count"],
         "holdout_count": launched["assignment"]["holdout_count"],

@@ -282,3 +282,97 @@ def test_an_unknown_call_id_is_a_404_not_a_crash(client):
     assert client.get("/soundbox/state", params={"call_id": "call_nope"}).status_code == 404
     assert client.post("/soundbox/button",
                        json={"call_id": "call_nope", "answer": "haan"}).status_code == 404
+
+
+# ---------------------------------------------------------------- call_id fallback
+#
+# The Sarvam agent tool fires mid conversation and does not reliably have the call id to
+# hand, so an absent one falls back to the most recent open call for that merchant.
+
+
+def test_launch_without_a_call_id_falls_back_to_the_latest_open_call(client):
+    call = client.post("/call", json={"merchant_id": MERCHANT_ID}).json()
+    client.post("/soundbox/button", json={"call_id": call["call_id"], "answer": "haan"})
+
+    launched = client.post("/campaign/launch", json={
+        "merchant_id": MERCHANT_ID, "approved": True}).json()
+
+    assert launched["status"] == "approved"
+    assert launched["call_id"] == call["call_id"]
+    assert launched["call_id_source"] == "resolved_latest_open"
+    assert launched["treated_count"] == 10
+
+
+def test_the_fallback_picks_the_most_recent_of_several_open_calls(client):
+    older = client.post("/call", json={"merchant_id": MERCHANT_ID}).json()
+    newer = client.post("/call", json={"merchant_id": MERCHANT_ID}).json()
+    assert older["call_id"] != newer["call_id"]
+
+    launched = client.post("/campaign/launch", json={
+        "merchant_id": MERCHANT_ID, "approved": True}).json()
+    assert launched["call_id"] == newer["call_id"]
+
+
+def test_an_explicit_call_id_still_wins_over_the_fallback(client):
+    wanted = client.post("/call", json={"merchant_id": MERCHANT_ID}).json()
+    client.post("/call", json={"merchant_id": MERCHANT_ID})   # a newer call it must ignore
+
+    launched = client.post("/campaign/launch", json={
+        "merchant_id": MERCHANT_ID, "call_id": wanted["call_id"], "approved": True}).json()
+
+    assert launched["call_id"] == wanted["call_id"]
+    assert launched["call_id_source"] == "explicit"
+
+
+def test_launch_404s_when_there_is_genuinely_no_open_call(client):
+    from voice import local_soundbox as soundbox
+    soundbox.PENDING.clear()
+
+    response = client.post("/campaign/launch", json={"merchant_id": MERCHANT_ID,
+                                                     "approved": True})
+    assert response.status_code == 404
+    assert MERCHANT_ID in response.json()["detail"]
+
+
+def test_an_unknown_explicit_call_id_still_404s(client):
+    """The fallback must not paper over a caller naming a call that does not exist."""
+    client.post("/call", json={"merchant_id": MERCHANT_ID})
+    response = client.post("/campaign/launch", json={
+        "merchant_id": MERCHANT_ID, "call_id": "call_does_not_exist", "approved": True})
+    assert response.status_code == 404
+    assert "call_does_not_exist" in response.json()["detail"]
+
+
+def test_the_fallback_ignores_calls_belonging_to_another_merchant(client):
+    from voice import local_soundbox as soundbox
+    soundbox.PENDING.clear()
+    call = client.post("/call", json={"merchant_id": MERCHANT_ID}).json()
+    soundbox.PENDING[call["call_id"]]["merchant_id"] = "some_other_shop"
+
+    response = client.post("/campaign/launch", json={"merchant_id": MERCHANT_ID,
+                                                     "approved": True})
+    assert response.status_code == 404
+
+
+def test_the_resolved_call_id_is_written_to_the_decision_log(client):
+    from api import main
+    call = client.post("/call", json={"merchant_id": MERCHANT_ID}).json()
+    client.post("/campaign/launch", json={"merchant_id": MERCHANT_ID, "approved": True})
+
+    lines = [json.loads(line) for line in
+             open(main.run_night.LOG_PATH, encoding="utf-8").read().splitlines() if line]
+    launches = [row for row in lines if row["stage"] == "campaign_launch"]
+    assert launches
+    assert launches[-1]["call_id"] == call["call_id"]
+    assert launches[-1]["call_id_source"] == "resolved_latest_open"
+
+
+def test_a_decline_without_a_call_id_does_not_404(client):
+    """A no still gets logged against whichever call it was, and dispatches nothing."""
+    call = client.post("/call", json={"merchant_id": MERCHANT_ID}).json()
+    declined = client.post("/campaign/launch", json={
+        "merchant_id": MERCHANT_ID, "approved": False}).json()
+
+    assert declined["status"] == "declined"
+    assert declined["campaign_id"] is None
+    assert declined["call_id"] == call["call_id"]

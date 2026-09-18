@@ -135,6 +135,28 @@ What they cannot check is whether 2.40.2 wants a different `typeVersion` for a g
 If something imports with a warning, open the node, re-pick the option, save. **Budget ten
 minutes for that on Friday rather than finding out on Saturday morning.**
 
+### 7a: call_id is now optional on POST /campaign/launch
+
+The Sarvam agent tool fires mid conversation and does not reliably have the call id to hand,
+so `/campaign/launch` used to 404 on exactly the call it was built for. `call_id` is now
+optional:
+
+- an explicit `call_id` still wins, and an unknown one still 404s rather than being papered
+  over by the fallback
+- absent, it resolves to the **most recently opened call for that merchant** that has a
+  chosen candidate, since a call with nothing decided has nothing to dispatch
+- a genuine 404 only when that merchant has no open call at all
+
+The response carries `call_id` and `call_id_source`, either `explicit` or
+`resolved_latest_open`, and both go into the decision log. A dispatch that guessed which call
+it belonged to should say so rather than leaving the log ambiguous.
+
+Eight tests cover it: the fallback, picking the newest of several, an explicit id winning, a
+genuine no open call 404, an unknown explicit id still 404ing, ignoring another merchant's
+calls, the log line carrying the resolved id, and a decline with no call id not 404ing.
+
+`/campaign/dispatch` is unchanged and still requires `call_id`, because n8n always has it.
+
 ### Not done, by instruction
 
 n8n was not run. Cognee is still not integrated. No network calls. `.env` untouched, nothing
@@ -144,7 +166,7 @@ pushed.
 
 ```
 $ python -m pytest tests/ -q
-166 passed in 34.04s
+174 passed in 22.20s
 
 $ python -m scripts.check_data
 all checks passed
