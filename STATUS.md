@@ -2,6 +2,135 @@
 
 Build log for Dukaan Dost. Newest step at the top.
 
+## DEMO DAY STARTUP SEQUENCE, Sat 19 Sep
+
+Run this in order. **Three PowerShell windows.** Two of them stay open all day doing
+nothing but running a process, the third is where you type. Nothing below needs the internet
+except cloudflared itself and the live Sarvam call.
+
+**Every window that runs a `python` command needs the venv activated first.** Forgetting this
+gives `ModuleNotFoundError: No module named 'httpx'`, because bare `python` on this machine is
+the system one, not the project's.
+
+### 1. Window one: start the API and leave it alone
+
+```powershell
+cd C:\Dev\dukaandost
+.\.venv\Scripts\Activate.ps1
+python -m uvicorn api.main:app --port 8000
+```
+
+Leave it running.
+
+### 2. Window two: start the tunnel and leave it alone
+
+```powershell
+cd C:\Dev\dukaandost
+cloudflared tunnel --url http://localhost:8000
+```
+
+No venv needed here, cloudflared is not Python.
+
+It prints a line like `https://random-words-here.trycloudflare.com`. **Copy it.** It changes
+every time cloudflared restarts, which is why step four exists.
+
+### 3. Window three: the one you actually type in
+
+```powershell
+cd C:\Dev\dukaandost
+.\.venv\Scripts\Activate.ps1
+$tunnel = "https://random-words-here.trycloudflare.com"
+```
+
+The prompt should now start with `(.venv)`. Everything from here runs in this window.
+
+### 4. Paste the tunnel URL into the four places it has to go
+
+| # | Where | What to set it to |
+|---|---|---|
+| 1 | **Sarvam agent, the `launch_campaign` tool URL** | `<tunnel>/campaign/launch` |
+| 2 | **n8n node "Where the backend lives"** in `nightly_parent.json` | `<tunnel>` in the `base_url` field |
+| 3 | **n8n node "Write the failure to the decision log"** in `error_handler.json` | `<tunnel>/decisions` |
+| 4 | **n8n node "Record the outcome in the backend"** in `call_webhook.json` | `<tunnel>/call/outcome` |
+
+Number two is the only one the sub workflow needs; it inherits `base_url` from the parent, so
+none of its own nodes have a URL to change. Numbers 3 and 4 are workflows with no parent to
+inherit from, which is why they carry their own.
+
+Save each n8n workflow after editing.
+
+### 5. Activate the n8n workflows
+
+In n8n Cloud, toggle Active on:
+
+1. **Dukaan Dost error handler** (first, so the others have something to report to)
+2. **Dukaan Dost call ended callback**, then copy its **Production webhook URL** and paste
+   it into the Sarvam agent as the post call webhook
+3. **Dukaan Dost run one merchant**
+4. **Dukaan Dost run one merchant, demo mode**
+5. **Dukaan Dost nightly run**
+
+Confirm each one's Settings has Error Workflow set to the error handler.
+
+### 6. Set the demo memory state
+
+Six measured campaigns, so the learning curve in panel six has something to draw:
+
+```powershell
+Remove-Item data\memory.db -ErrorAction SilentlyContinue
+$env:LLM_MODE = "replay"
+python -m scripts.run_campaigns --campaigns 6
+```
+
+**Know what this does to panel two.** With six campaigns measured, the winback row reads
+about 302, 397, 278 rather than the day one 148.03, 186.62, 107.02, because the agent has
+learned this shop responds harder than the priors assumed. Both are correct. If you would
+rather show the day one grid, delete `data/memory.db` and accept an empty panel six.
+
+### 7. Open a fresh call
+
+```powershell
+$call = Invoke-RestMethod -Method Post -Uri http://localhost:8000/call -ContentType 'application/json' -Body '{}'
+$call.call_id
+Start-Process "http://localhost:8000/soundbox?call_id=$($call.call_id)"
+```
+
+That opens the soundbox page with the HAAN and NAHI buttons. **Open a fresh call again right
+before you walk on**, because a call that has already been answered cannot be answered twice.
+
+### 8. Open the dashboard and confirm
+
+```powershell
+Start-Process "http://localhost:8000/"
+```
+
+Look for: twelve lapsed customers in panel one, a green MEDIUM cell in panel two, the Hindi
+script in panel three, ten named messages and two greyed control cards in panel four, and a
+climbing green line in panel six.
+
+### 9. Run the preflight
+
+```powershell
+python -m scripts.demo_check --tunnel $tunnel
+```
+
+Ten checks, one line each. It exits non zero if anything is wrong and tells you the command
+to fix it. The tunnel probe posts to `/campaign/launch` with `approved: false` on purpose, so
+it proves the route the Sarvam tool uses without messaging a single customer.
+
+Run it again after any restart of uvicorn or cloudflared.
+
+### If something breaks mid pitch
+
+- **The call does not connect.** Press HAAN on the soundbox page. The Decision is identical.
+- **The tunnel dies.** Everything except the live Sarvam call runs on localhost. The
+  dashboard, the soundbox and the whole loop keep working.
+- **The model is slow or down.** `$env:LLM_MODE = "replay"` and restart uvicorn. Every
+  answer comes off disk, including the Hindi script and its audio.
+- **Anything else.** Cut to the backup video.
+
+---
+
 ## Step 7: n8n orchestration (Fri 18 Sep, late afternoon)
 
 Status: **done, 166 tests pass, 23 of them checking the workflow JSON.**
