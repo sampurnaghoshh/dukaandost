@@ -6,134 +6,147 @@
 <title>Dukaan Dost</title>
 <style>
   :root {
-    /* Paytm palette. Every colour in the page and the chart comes from here, so one edit
-       changes the theme. Nothing is downloaded: these are hex values and system fonts. */
-    --navy:        #0B2559;   /* headings, the dark band, and all body text */
-    --navy-deep:   #081B41;   /* the band's lower edge */
+    /* Paytm palette. Every colour on the page and in the chart comes from here, so one
+       edit changes the theme. Nothing is downloaded: hex values and system fonts only. */
+    --navy:        #0B2559;   /* headings, the band, and all body text */
     --paytm-blue:  #00BAF2;   /* accents, rules, borders, the positive verdict */
     --sky:         #5FC8F5;   /* secondary accents */
     --sky-wash:    #E8F8FE;   /* tinted fills */
     --white:       #FFFFFF;
-    --page:        #F4F6FA;   /* very light grey page */
-    --card:        #FFFFFF;
-    --line:        #DCE3EF;   /* borders, a navy tinted grey */
-    --muted:       #5A6B8C;   /* secondary text, navy leaning, 5.3:1 on white */
-    --faint:       #93A0B8;   /* struck through and held back text */
+    --grey:        #F4F6FA;   /* the one light grey, for page and quiet surfaces */
+    --line:        #DDE4EF;   /* hairline borders */
+    --muted:       #52648A;   /* secondary text, navy leaning, 6.1:1 on white */
+    --faint:       #93A0B8;   /* struck through and held back */
 
     /* These two carry meaning and stay as they were. */
     --amber:       #8A6D1F;   /* the silent night verdict */
     --amber-wash:  #FBF3DF;
     --red:         #A32020;   /* a campaign that measured below zero */
 
-    /* Chart. Read by the SVG so the theme is defined in one place only. */
-    --chart-grid:  #E1E7F2;
+    /* Chart, read back by the inline SVG. */
+    --chart-grid:  #E3E9F3;
     --chart-zero:  #AAB6CC;
+
+    --radius: 10px;           /* one radius, used everywhere */
   }
   * { box-sizing: border-box; }
   html { -webkit-text-size-adjust: 100%; }
   body {
-    margin: 0; padding: 22px 18px 70px;
-    background: var(--page); color: var(--navy);
+    margin: 0; padding: 0 18px 70px;
+    background: var(--grey); color: var(--navy);
     font-family: "Segoe UI", Roboto, "Noto Sans Devanagari", system-ui, sans-serif;
-    font-size: 17px; line-height: 1.5;
+    font-size: 17px; line-height: 1.55;
     font-variant-numeric: tabular-nums;
   }
   .wrap { max-width: 1080px; margin: 0 auto; }
 
-  /* The navy band. Same element, same order, just filled. */
+  /* The navy band. */
   header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 14px;
            background: var(--navy); color: var(--white);
-           border-bottom: 4px solid var(--paytm-blue);
-           border-radius: 12px 12px 0 0;
-           padding: 20px 22px; margin-bottom: 26px; }
-  h1 { font-size: 30px; margin: 0; letter-spacing: -0.02em; color: var(--white);
-       font-weight: 800; }
-  .tagline { color: var(--sky); font-size: 16px; }
+           border-radius: 0 0 var(--radius) var(--radius);
+           padding: 26px 28px; margin: 0 0 24px; }
+  h1 { font-size: 29px; margin: 0; letter-spacing: -0.015em; color: var(--white);
+       font-weight: 700; }
+  .tagline { color: var(--sky); font-size: 16px; font-weight: 400; }
   .live { margin-left: auto; font-size: 13px; color: var(--sky); }
-  .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%;
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%;
          background: var(--paytm-blue); margin-right: 6px; }
 
-  section { background: var(--card); border: 1px solid var(--line); border-radius: 12px;
-            padding: 20px 22px; margin-bottom: 20px; }
-  h2 { font-size: 13px; letter-spacing: 0.13em; text-transform: uppercase;
-       color: var(--muted); margin: 0 0 16px; font-weight: 700; }
-  h2 .n { color: var(--white); background: var(--navy); border: 1px solid var(--navy);
-          border-radius: 5px; padding: 1px 7px; margin-right: 9px; }
+  /* Cards: generous padding, a hairline border, no drop shadow. */
+  section { background: var(--white); border: 1px solid var(--line);
+            border-radius: var(--radius); padding: 28px 30px; margin-bottom: 18px; }
 
-  /* Rupee figures stay dark navy on light so they read from six feet. */
-  .huge { font-size: 46px; font-weight: 800; letter-spacing: -0.03em; line-height: 1.05;
-          font-variant-numeric: tabular-nums; color: var(--navy); }
-  .big { font-size: 30px; font-weight: 700; font-variant-numeric: tabular-nums;
-         letter-spacing: -0.02em; color: var(--navy); }
+  /* Panel titles in sentence case, small and muted. No tracking, no capitals. */
+  h2 { font-size: 15px; font-weight: 600; color: var(--muted); margin: 0 0 20px; }
+  h2 .n { color: var(--faint); font-weight: 400; margin-right: 10px; }
+
   .sub { color: var(--muted); font-size: 15px; }
-  .sentence { font-size: 20px; line-height: 1.5; margin: 0 0 10px; color: var(--navy); }
-  .sentence b { font-variant-numeric: tabular-nums; }
-  .hindi { font-size: 23px; line-height: 1.75; color: var(--navy); }
+  .sentence { font-size: 19px; line-height: 1.55; margin: 0 0 10px; color: var(--navy); }
+  .hindi { font-size: 22px; line-height: 1.75; color: var(--navy); }
+  .note { font-size: 15px; color: var(--muted); margin-top: 14px; }
+  .empty { color: var(--muted); font-size: 18px; }
 
-  .verdict { display: inline-block; font-size: 24px; font-weight: 800; letter-spacing: 0.02em;
-             padding: 12px 20px; border-radius: 10px; margin-top: 6px; }
-  /* Navy on Paytm blue is 6.4:1, so the positive verdict is blue and still readable. */
-  .verdict.call { background: var(--paytm-blue); color: var(--navy);
-                  border: 2px solid var(--paytm-blue); }
+  /* Panel one: three signal cards, then the decision underneath. */
+  .signals { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+             gap: 14px; margin: 20px 0 8px; }
+  .signal-card { background: var(--grey); border: 1px solid var(--line);
+                 border-radius: var(--radius); padding: 20px 22px; }
+  .signal-card.full { border-top: 3px solid var(--paytm-blue); }
+  .figure { font-size: 30px; font-weight: 700; color: var(--navy); letter-spacing: -0.02em;
+            line-height: 1.1; }
+  .figure-unit { font-size: 14px; color: var(--muted); margin-top: 2px; }
+  .signal-text { font-size: 16px; font-weight: 400; color: var(--navy); margin: 12px 0 0;
+                 line-height: 1.5; }
+
+  .decision { border-top: 1px solid var(--line); margin-top: 22px; padding-top: 22px; }
+  .total { font-size: 32px; font-weight: 700; color: var(--navy); letter-spacing: -0.02em; }
+
+  /* The verdict is the largest thing here, because the decision is the point. */
+  .verdict { display: inline-block; font-size: 38px; font-weight: 700;
+             letter-spacing: -0.02em; padding: 14px 26px; border-radius: var(--radius);
+             margin-top: 18px; }
+  .verdict.call { background: var(--paytm-blue); color: var(--navy); }
   .verdict.quiet { background: var(--amber-wash); color: var(--amber);
                    border: 2px solid var(--amber); }
 
-  .signal { border-left: 4px solid var(--line); padding: 4px 0 4px 14px; margin-bottom: 14px; }
-  .signal.full { border-left-color: var(--paytm-blue); }
-  .signal .val { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums;
-                 color: var(--navy); }
-  .signal .kind { font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em;
-                  color: var(--muted); }
-
+  /* Panel two: the grid. */
   table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
-  th { font-size: 12px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted);
-       text-align: right; padding: 6px 10px; font-weight: 700;
-       border-bottom: 2px solid var(--paytm-blue); }
+  th { font-size: 14px; font-weight: 600; color: var(--muted); text-align: right;
+       padding: 8px 10px; border-bottom: 2px solid var(--paytm-blue); }
   th.left, td.left { text-align: left; }
-  td { padding: 10px; border-bottom: 1px solid var(--line); text-align: right; font-size: 17px; }
+  td { padding: 12px 10px; border-bottom: 1px solid var(--line); text-align: right;
+       font-size: 17px; }
   tr.refused td { color: var(--faint); }
   tr.refused .cand { text-decoration: line-through; }
-  .cand { font-weight: 700; font-size: 17px; color: var(--navy); }
-  .seg { display: block; font-size: 13px; color: var(--muted); font-weight: 400;
-         text-decoration: none; }
-  .cell { display: inline-block; padding: 5px 9px; border-radius: 7px; min-width: 76px; }
-  .cell.chosen { background: var(--paytm-blue); color: var(--navy); font-weight: 800; }
+  .cand { font-weight: 600; font-size: 17px; color: var(--navy); }
+  .seg { display: block; font-size: 14px; color: var(--muted); font-weight: 400;
+         text-decoration: none; margin-top: 2px; }
+  .cell { display: inline-block; padding: 6px 10px; border-radius: var(--radius);
+          min-width: 78px; }
+  .cell.chosen { background: var(--paytm-blue); color: var(--navy); font-weight: 700; }
   .cell.modelpick { outline: 2px dashed var(--sky); outline-offset: 1px; color: var(--navy);
-                    font-weight: 700; }
+                    font-weight: 600; }
   .cell.dead { color: var(--faint); }
-  .why { font-size: 13px; color: var(--red); display: block; margin-top: 3px; }
-  .legend { font-size: 13px; color: var(--muted); margin-top: 14px; }
-  .legend .swatch { display: inline-block; padding: 2px 8px; border-radius: 5px; margin-right: 5px; }
+  .why { font-size: 14px; color: var(--red); display: block; margin-top: 3px; }
+  .legend { font-size: 14px; color: var(--muted); margin-top: 16px; }
+  .legend .swatch { display: inline-block; padding: 2px 8px; border-radius: var(--radius);
+                    margin-right: 5px; }
 
-  .msgs { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; }
-  .msg { border: 1px solid var(--line); border-radius: 9px; padding: 12px 14px;
-         background: var(--white); border-left: 4px solid var(--paytm-blue); }
-  .msg .who { font-size: 15px; font-weight: 700; letter-spacing: 0; text-transform: none;
-              color: var(--navy); margin-bottom: 6px; }
-  .msg .cid { font-size: 11px; font-weight: 400; letter-spacing: 0.06em; color: var(--muted);
-              margin-left: 8px; }
-  .msg.held { background: var(--page); border-style: dashed; border-left-color: var(--faint);
-              color: var(--faint); }
+  /* Panel three and four. */
+  .pill { display: inline-block; font-size: 13px; border: 1px solid var(--paytm-blue);
+          border-radius: var(--radius); padding: 4px 12px; color: var(--muted);
+          background: var(--sky-wash); }
+  button { font: inherit; font-size: 15px; font-weight: 600; cursor: pointer;
+           background: var(--white); border: 2px solid var(--paytm-blue);
+           border-radius: var(--radius); padding: 10px 18px; color: var(--navy); }
+
+  .msgs { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+          gap: 14px; }
+  .msg { border: 1px solid var(--line); border-radius: var(--radius); padding: 16px 18px;
+         background: var(--white); border-left: 3px solid var(--paytm-blue); }
+  .msg .who { font-size: 16px; font-weight: 600; color: var(--navy); margin-bottom: 8px; }
+  .msg .cid { font-size: 12px; font-weight: 400; color: var(--muted); margin-left: 8px; }
+  .msg.held { background: var(--grey); border-style: dashed;
+              border-left-color: var(--faint); color: var(--faint); }
   .msg.held .who { color: var(--faint); }
   .msg.held .cid { color: var(--faint); }
   .held-note { font-style: italic; }
 
-  .stats { display: flex; flex-wrap: wrap; gap: 34px; align-items: flex-end; }
-  .stat .k { font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em;
-             color: var(--muted); }
-  .eq { font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; margin-top: 14px;
-        color: var(--navy); }
+  /* Panel five. */
+  .big { font-size: 28px; font-weight: 700; color: var(--navy); letter-spacing: -0.02em; }
+  .huge { font-size: 40px; font-weight: 700; color: var(--navy); letter-spacing: -0.025em;
+          line-height: 1.1; }
+  .stats { display: flex; flex-wrap: wrap; gap: 36px; align-items: flex-end; }
+  .stat .k { font-size: 14px; color: var(--muted); }
+  .eq { font-size: 26px; font-weight: 700; margin-top: 18px; color: var(--navy); }
   .eq .op { color: var(--muted); font-weight: 400; padding: 0 8px; }
 
-  .note { font-size: 15px; color: var(--muted); margin-top: 14px; }
-  .empty { color: var(--muted); font-size: 18px; font-style: italic; }
-  .pill { display: inline-block; font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase;
-          border: 1px solid var(--paytm-blue); border-radius: 20px; padding: 3px 11px;
-          color: var(--muted); background: var(--sky-wash); }
-  button { font: inherit; font-size: 15px; font-weight: 600; cursor: pointer;
-           background: var(--white); border: 2px solid var(--paytm-blue); border-radius: 8px;
-           padding: 10px 18px; color: var(--navy); }
-  @media (max-width: 640px) { .huge { font-size: 34px; } body { font-size: 16px; } }
+  @media (max-width: 640px) {
+    body { font-size: 16px; }
+    .huge { font-size: 32px; }
+    .verdict { font-size: 30px; }
+    section { padding: 22px 20px; }
+  }
 </style>
 </head>
 <body>
@@ -198,24 +211,37 @@ function panelTonight(state) {
     + m.baseline.active_customers + " customers active, " + m.baseline.regular_customers
     + " of them regulars.</span></p>";
 
-  (t.signals || []).forEach(function (signal) {
-    html += '<div class="signal' + (signal.counts_in_full ? " full" : "") + '">'
-      + '<div class="kind">' + esc(signal.kind) + "</div>"
-      + '<div class="sentence" style="margin:2px 0 4px">' + esc(signal.sentence) + "</div>"
-      + '<div class="val">' + rs(signal.monthly_value) + ' <span class="sub">a month'
-      + (signal.counts_in_full ? "" : ", discounted before it counts") + "</span></div></div>";
-  });
-  if (!(t.signals || []).length) { html += empty("No signal is outside this shop's own norm."); }
+  // One card per triage signal. The kind label is gone on purpose: each sentence already
+  // says what it is, so a tracked out capital heading above it was saying it twice.
+  var signals = t.signals || [];
+  if (signals.length) {
+    html += '<div class="signals">';
+    signals.forEach(function (signal) {
+      html += '<div class="signal-card' + (signal.counts_in_full ? " full" : "") + '">'
+        + '<div class="figure">' + rs(signal.monthly_value) + "</div>"
+        + '<div class="figure-unit">a month'
+        + (signal.counts_in_full ? "" : ", discounted before it counts") + "</div>"
+        + '<p class="signal-text">' + esc(signal.sentence) + "</p>"
+        + "</div>";
+    });
+    html += "</div>";
+  } else {
+    html += empty("No signal is outside this shop's own norm.");
+  }
 
-  html += '<div class="huge" style="margin-top:18px">' + rs(t.opportunity_score)
-    + '</div><div class="sub">a month at stake, ' + pct(t.revenue_share, 0)
+  // The total and the verdict, with the verdict the largest thing on the panel, because
+  // the decision is the point and the metrics are the working.
+  html += '<div class="decision">'
+    + '<div class="total">' + rs(t.opportunity_score) + "</div>"
+    + '<div class="sub">a month at stake, ' + pct(t.revenue_share, 0)
     + " of this shop's revenue. Threshold is " + rs(t.thresholds.min_monthly_rupees)
     + " and " + pct(t.thresholds.min_revenue_share, 0) + ".</div>";
 
   html += t.worth_a_call
-    ? '<div class="verdict call">WORTH A CALL</div>'
-    : '<div class="verdict quiet">NO CALL TONIGHT</div>'
+    ? '<div class="verdict call">Worth a call</div>'
+    : '<div class="verdict quiet">No call tonight</div>'
       + '<p class="note">' + esc(t.silent_reason || "") + "</p>";
+  html += "</div>";
   return html;
 }
 
@@ -291,9 +317,9 @@ function shortReason(rejections) {
 function panelCall(state) {
   var c = state.call;
   if (!c) { return empty("No call placed yet."); }
-  var outcome = c.approved === true ? "APPROVED"
-    : c.outcome === "declined" ? "DECLINED"
-    : c.settled ? "UNDECIDED" : "WAITING FOR THE MERCHANT";
+  var outcome = c.approved === true ? "Approved"
+    : c.outcome === "declined" ? "Declined"
+    : c.settled ? "Undecided" : "Waiting for the merchant";
   var tone = c.approved === true ? "var(--navy)"
     : c.outcome === "declined" ? "var(--red)" : "var(--amber)";
 
