@@ -1,0 +1,630 @@
+{
+  "name": "Dukaan Dost run one merchant, demo mode",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "d4c3b2a1-0001-4d40-8f04-000000000001",
+      "name": "Press play on stage",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -1340,
+        420
+      ],
+      "notes": "The only difference that matters between this and the real workflow is here and at the wait node."
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "demo-base-url",
+              "name": "base_url",
+              "value": "http://localhost:8000",
+              "type": "string"
+            },
+            {
+              "id": "demo-merchant",
+              "name": "merchant_id",
+              "value": "tea_stall_01",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "d4c3b2a1-0002-4d40-8f04-000000000002",
+      "name": "Start the night for one merchant",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -1100,
+        420
+      ],
+      "notes": "Keeps the same node name as the real workflow, so every expression downstream is identical. THE ONE PLACE THE BACKEND URL IS WRITTEN in demo mode."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Start the night for one merchant').first().json.base_url }}/triage",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ merchant_id: $('Start the night for one merchant').first().json.merchant_id }) }}",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "id": "b2e1d3a5-0002-4b20-8e02-000000000002",
+      "name": "Is anything wrong at this shop",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -880,
+        420
+      ],
+      "notes": "Pure arithmetic over the ledger. This runs for every merchant, every night, and costs nothing but CPU."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "worth-a-call-condition",
+              "leftValue": "={{ $json.worth_a_call }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "b2e1d3a5-0003-4b20-8e02-000000000003",
+      "name": "Is it worth a phone call",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -640,
+        420
+      ],
+      "notes": "Roughly ninety seven nights in a hundred go down the lower branch. That is the whole cost argument."
+    },
+    {
+      "parameters": {},
+      "id": "b2e1d3a5-0004-4b20-8e02-000000000004",
+      "name": "No call tonight",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        -400,
+        620
+      ],
+      "notes": "Deciding to stay quiet is a decision. It is on the canvas because it is a feature, not a gap."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Start the night for one merchant').first().json.base_url }}/decisions",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ stage: 'triage', decision: 'no_call', headline: 'no call tonight', merchant_id: $('Start the night for one merchant').first().json.merchant_id, source: 'n8n', detail: { opportunity_score: $('Is anything wrong at this shop').first().json.opportunity_score, revenue_share: $('Is anything wrong at this shop').first().json.revenue_share, thresholds: $('Is anything wrong at this shop').first().json.thresholds } }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "b2e1d3a5-0005-4b20-8e02-000000000005",
+      "name": "Write down that we stayed quiet",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -180,
+        620
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Start the night for one merchant').first().json.base_url }}/generate",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ merchant_id: $('Start the night for one merchant').first().json.merchant_id }) }}",
+        "options": {
+          "timeout": 180000
+        }
+      },
+      "id": "b2e1d3a5-0006-4b20-8e02-000000000006",
+      "name": "Ask the model what to try",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -400,
+        260
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 3000,
+      "notes": "The model proposes the action and the audience. It is never asked for a number."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Start the night for one merchant').first().json.base_url }}/simulate",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ merchant_id: $('Start the night for one merchant').first().json.merchant_id, candidates: $json.candidates }) }}",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "id": "b2e1d3a5-0007-4b20-8e02-000000000007",
+      "name": "Price every offer depth",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -180,
+        260
+      ],
+      "notes": "Each candidate is priced at LOW, MEDIUM and HIGH. Whatever loses money is refused here, not on the call."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Start the night for one merchant').first().json.base_url }}/call",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ merchant_id: $('Start the night for one merchant').first().json.merchant_id, callback_url: $execution.resumeUrl }) }}",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "id": "b2e1d3a5-0008-4b20-8e02-000000000008",
+      "name": "Phone the shopkeeper in Hindi",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        40,
+        260
+      ],
+      "notes": "Hands the backend the resume URL of the Wait node below, so the call wakes this workflow the moment the merchant answers."
+    },
+    {
+      "parameters": {
+        "resume": "webhook",
+        "limitWaitTime": true,
+        "resumeAmount": 3,
+        "resumeUnit": "minutes",
+        "options": {
+          "webhookSuffix": "answer"
+        }
+      },
+      "id": "b2e1d3a5-0009-4b20-8e02-000000000009",
+      "name": "Wait for the merchant to answer",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        260,
+        260
+      ],
+      "webhookId": "c7a9f1b2-1111-4c30-9d03-000000000011",
+      "notes": "Parks the run on a real event rather than polling. If nobody answers within three minutes it resumes anyway and the switch below falls through to no answer."
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "approved-rule",
+                    "leftValue": "={{ $json.body ? $json.body.outcome : $json.outcome }}",
+                    "rightValue": "approved",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "approved"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "declined-rule",
+                    "leftValue": "={{ $json.body ? $json.body.outcome : $json.outcome }}",
+                    "rightValue": "declined",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "declined"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra",
+          "renameFallbackOutput": "no answer"
+        }
+      },
+      "id": "b2e1d3a5-0010-4b20-8e02-000000000010",
+      "name": "What did he say",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        480,
+        260
+      ],
+      "notes": "Three ways, not two. A no and a missed call are different facts and are handled by different branches."
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Assign the holdout exactly the way core/holdout.py does.\n//\n// sha256 of \"campaign id | customer id | seed\", take the first twelve hex digits as a\n// number in [0, 1), sort ascending, and hold back the lowest fifteen percent. Hashing\n// rather than shuffling means a retry of this node produces the identical split, which is\n// why retryOnFail on the dispatch below is safe.\n//\n// The backend verifies this split before it sends anything: disjoint arms, right sizes,\n// every customer accounted for. If this node and core/holdout.py ever disagree, the\n// response says so in matches_core_holdout rather than quietly sending the wrong thing.\n\nconst HOLDOUT_SHARE = 0.15;\n\nconst callNode = $('Phone the shopkeeper in Hindi').first().json;\nconst callId = callNode.call_id;\nconst seed = 20260919;\nconst customerIds = callNode.brief.evidence\n  ? $('Is anything wrong at this shop').first().json.signals.lapsed_regulars.customer_ids\n  : [];\n\nasync function score(customerId) {\n  const text = `${callId}|${customerId}|${seed}`;\n  const bytes = new TextEncoder().encode(text);\n  const digest = await crypto.subtle.digest('SHA-256', bytes);\n  const hex = Array.from(new Uint8Array(digest))\n    .map((b) => b.toString(16).padStart(2, '0'))\n    .join('');\n  return parseInt(hex.slice(0, 12), 16) / Math.pow(16, 12);\n}\n\nconst unique = Array.from(new Set(customerIds)).sort();\nconst scored = [];\nfor (const customerId of unique) {\n  scored.push({ customerId, value: await score(customerId) });\n}\nscored.sort((a, b) => a.value - b.value);\n\nconst holdoutCount = Math.round(unique.length * HOLDOUT_SHARE);\nconst control = scored.slice(0, holdoutCount).map((row) => row.customerId).sort();\nconst treated = scored.slice(holdoutCount).map((row) => row.customerId).sort();\n\nreturn [{\n  json: {\n    call_id: callId,\n    merchant_id: $('Start the night for one merchant').first().json.merchant_id,\n    seed,\n    treated,\n    control,\n    treated_count: treated.length,\n    holdout_count: control.length,\n  },\n}];"
+      },
+      "id": "b2e1d3a5-0011-4b20-8e02-000000000011",
+      "name": "Hold back fifteen percent at random",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        720,
+        100
+      ],
+      "notes": "The control group never gets a message. Not messaging them is the entire experiment."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Start the night for one merchant').first().json.base_url }}/campaign/dispatch",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ merchant_id: $json.merchant_id, call_id: $json.call_id, seed: $json.seed, treated: $json.treated, control: $json.control }) }}",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "id": "b2e1d3a5-0012-4b20-8e02-000000000012",
+      "name": "Send the Hindi messages",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        940,
+        100
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "notes": "Retries three times. The split is a hash, not a shuffle, so a retry sends to exactly the same people and cannot double treat anybody."
+    },
+    {
+      "parameters": {
+        "amount": 5,
+        "unit": "seconds"
+      },
+      "id": "b2e1d3a5-0013-4b20-8e02-000000000013",
+      "name": "Wait five seconds, standing in for seventy two hours",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        1160,
+        100
+      ],
+      "webhookId": "c7a9f1b2-2222-4c30-9d03-000000000022",
+      "notes": "The real workflow waits seventy two hours here. Five seconds is the only thing faked for the stage, and it is faked in one place."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Start the night for one merchant').first().json.base_url }}/measure",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ merchant_id: $('Start the night for one merchant').first().json.merchant_id, campaign_id: $('Send the Hindi messages').first().json.campaign_id }) }}",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "id": "b2e1d3a5-0014-4b20-8e02-000000000014",
+      "name": "Measure what actually happened",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1380,
+        100
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "notes": "Lift is treated conversion minus control conversion. Nothing here is estimated."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Start the night for one merchant').first().json.base_url }}/learning/update",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ merchant_id: $('Start the night for one merchant').first().json.merchant_id, campaign_id: $('Send the Hindi messages').first().json.campaign_id }) }}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "b2e1d3a5-0015-4b20-8e02-000000000015",
+      "name": "Write the lesson back to memory",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1600,
+        100
+      ],
+      "notes": "Predicted against actual. This is the node that makes campaign six better than campaign one."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Start the night for one merchant').first().json.base_url }}/decisions",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ stage: 'call', decision: 'declined', headline: 'the merchant said no, nothing was sent', merchant_id: $('Start the night for one merchant').first().json.merchant_id, source: 'n8n', detail: { call_id: $('Phone the shopkeeper in Hindi').first().json.call_id } }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "b2e1d3a5-0016-4b20-8e02-000000000016",
+      "name": "Log that he said no",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        720,
+        320
+      ],
+      "onError": "continueRegularOutput",
+      "notes": "A no is information. It is logged on its own branch, not folded in with a missed call."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Start the night for one merchant').first().json.base_url }}/decisions",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ stage: 'call', decision: 'no_answer', headline: 'nobody picked up, try again tomorrow night', merchant_id: $('Start the night for one merchant').first().json.merchant_id, source: 'n8n', detail: { call_id: $('Phone the shopkeeper in Hindi').first().json.call_id } }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "b2e1d3a5-0017-4b20-8e02-000000000017",
+      "name": "Log that nobody picked up",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        720,
+        520
+      ],
+      "onError": "continueRegularOutput",
+      "notes": "Different from a no. This merchant gets another attempt tomorrow, a refusal does not."
+    }
+  ],
+  "connections": {
+    "Start the night for one merchant": {
+      "main": [
+        [
+          {
+            "node": "Is anything wrong at this shop",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is anything wrong at this shop": {
+      "main": [
+        [
+          {
+            "node": "Is it worth a phone call",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is it worth a phone call": {
+      "main": [
+        [
+          {
+            "node": "Ask the model what to try",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No call tonight",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "No call tonight": {
+      "main": [
+        [
+          {
+            "node": "Write down that we stayed quiet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ask the model what to try": {
+      "main": [
+        [
+          {
+            "node": "Price every offer depth",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Price every offer depth": {
+      "main": [
+        [
+          {
+            "node": "Phone the shopkeeper in Hindi",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Phone the shopkeeper in Hindi": {
+      "main": [
+        [
+          {
+            "node": "Wait for the merchant to answer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait for the merchant to answer": {
+      "main": [
+        [
+          {
+            "node": "What did he say",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "What did he say": {
+      "main": [
+        [
+          {
+            "node": "Hold back fifteen percent at random",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log that he said no",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log that nobody picked up",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Hold back fifteen percent at random": {
+      "main": [
+        [
+          {
+            "node": "Send the Hindi messages",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send the Hindi messages": {
+      "main": [
+        [
+          {
+            "node": "Wait five seconds, standing in for seventy two hours",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Measure what actually happened": {
+      "main": [
+        [
+          {
+            "node": "Write the lesson back to memory",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Press play on stage": {
+      "main": [
+        [
+          {
+            "node": "Start the night for one merchant",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait five seconds, standing in for seventy two hours": {
+      "main": [
+        [
+          {
+            "node": "Measure what actually happened",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "errorWorkflow": "REPLACE_WITH_ERROR_HANDLER_WORKFLOW_ID",
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all",
+    "saveExecutionProgress": true
+  },
+  "pinData": {},
+  "meta": {
+    "instanceId": "dukaan-dost"
+  },
+  "tags": [
+    {
+      "name": "dukaan-dost"
+    }
+  ]
+}

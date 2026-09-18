@@ -2,6 +2,158 @@
 
 Build log for Dukaan Dost. Newest step at the top.
 
+## Step 7: n8n orchestration (Fri 18 Sep, late afternoon)
+
+Status: **done, 166 tests pass, 23 of them checking the workflow JSON.**
+
+### The five workflows
+
+| file | what it is |
+|---|---|
+| `nightly_parent.json` | Schedule trigger at 9pm, fans out over merchants, calls the sub workflow once each |
+| `run_one_merchant.json` | The real loop for one shop, including the 72 hour Wait |
+| `run_one_merchant_demo.json` | Same canvas, manual trigger, 5 second Wait so it finishes on stage |
+| `call_webhook.json` | Receives Sarvam's post call callback, reads the outcome, records it |
+| `error_handler.json` | Error workflow for all of the above |
+
+The sub workflow canvas, in order:
+
+```
+  Start the night for one merchant               executeWorkflowTrigger
+  Is anything wrong at this shop                 httpRequest
+  Is it worth a phone call                       if
+  No call tonight                                noOp
+  Write down that we stayed quiet                httpRequest
+  Ask the model what to try                      httpRequest
+  Price every offer depth                        httpRequest
+  Phone the shopkeeper in Hindi                  httpRequest
+  Wait for the merchant to answer                wait
+  What did he say                                switch
+  Hold back fifteen percent at random            code
+  Send the Hindi messages                        httpRequest
+  Wait seventy two hours                         wait
+  Measure what actually happened                 httpRequest
+  Write the lesson back to memory                httpRequest
+  Log that he said no                            httpRequest
+  Log that nobody picked up                      httpRequest
+```
+
+### The two URLs, each in one place
+
+**The backend URL** is the `base_url` field of the Set node named "Where the backend lives"
+in the parent, defaulted to `http://localhost:8000`. The parent passes it to the sub
+workflow, and every HTTP node reads it from there with
+`$('Start the night for one merchant').first().json.base_url`. Neither the parent nor the sub
+workflow contains a host anywhere else, and a test enforces that.
+
+**The Sarvam callback URL** is issued by n8n from the Webhook node in `call_webhook.json`,
+path `dukaan-dost/call-ended`. We do not choose it; activate the workflow, copy it, paste it
+into the Sarvam voice agent.
+
+`call_webhook.json` and `error_handler.json` have no parent to inherit from, so each carries
+its host once in its final HTTP node. Both are named in `workflows/README.md` as the only
+other places a URL appears.
+
+### The thing I added that was not in the brief, and why
+
+The brief has `POST /call` followed directly by the three way Switch. That could not work:
+`/call` opens the call and returns immediately, so the Switch would have branched on an
+outcome that had not happened yet, and every run would have gone down the no answer path.
+
+So there is a **Wait node with webhook resume** between them, and `/call` now accepts a
+`callback_url`. The chain:
+
+1. "Phone the shopkeeper in Hindi" posts to `/call` and hands over `$execution.resumeUrl`.
+2. "Wait for the merchant to answer" parks the execution. Nothing is polling.
+3. When the merchant answers, the backend posts the Decision to that resume URL and the run
+   wakes up where it stopped.
+4. If nobody answers in three minutes the Wait resumes anyway and the Switch falls through
+   to its no answer branch, which is a real no answer rather than a timeout pretending.
+
+This is a better n8n showcase than the original shape, not a worse one: the execution pauses
+on a genuine external event. It also works identically for the soundbox buttons and for real
+telephony, because both settle through the same code path.
+
+### Four endpoints added, because a node on the canvas calls them
+
+| endpoint | why it exists |
+|---|---|
+| `POST /decisions` | The silent night, the decline, the no answer and the error handler all write one line here |
+| `POST /campaign/dispatch` | Takes the split the Code node computed, verifies it, then dispatches |
+| `POST /learning/update` | Reads the measurement back and reports the refreshed belief |
+| `POST /call/outcome` | Where Sarvam's webhook lands, producing the same Decision the soundbox does |
+
+`/campaign/dispatch` is the interesting one. The brief wanted the 85/15 split computed in a
+Code node so it is visible on the canvas rather than hidden in a service. That is a real risk:
+two implementations of the same split can drift. So the Code node hashes exactly the way
+`core/holdout.py` does, SHA-256 of `campaign id | customer id | seed`, first twelve hex digits
+as a fraction, sort, hold back the lowest fifteen percent. The backend then **re-derives the
+split independently** and returns `matches_core_holdout`. If the canvas and the code ever
+disagree, it says so instead of quietly sending to the wrong people. Structural validation
+(disjoint arms, right sizes, nobody missing) refuses the dispatch outright.
+
+A test asserts the Code node's `HOLDOUT_SHARE` and seed literals match the Python constants,
+so changing one and not the other fails the build.
+
+### Why the retry on dispatch is safe
+
+"Send the Hindi messages" has `retryOnFail` with three tries. That is only safe because the
+split is a hash rather than a shuffle: a retry recomputes the identical assignment and
+messages exactly the same ten people. A shuffle would have re-randomised on retry and
+double treated somebody, which would have quietly broken the experiment.
+
+### Two bugs my own tests caught
+
+1. **The demo workflow was broken on import.** The generator renamed the Wait node from
+   "Wait seventy two hours" to the five second version and rewrote the connections *from*
+   it, but not the connection *to* it from "Send the Hindi messages". n8n would have
+   imported a workflow with a dangling link. `test_every_connection_points_at_a_node_that_exists`
+   caught it.
+2. **My reachability test did not know a Webhook is a trigger.** It looked for the word
+   trigger in the node type, and `n8n-nodes-base.webhook` does not contain it, so it flagged
+   the Sarvam webhook as an orphan. That one was the test being wrong, not the workflow.
+
+The demo workflow is generated from the real one by a script rather than hand copied, so the
+two cannot drift. A test asserts they have identical HTTP nodes and that demo mode adds
+exactly one node, its Set node.
+
+### What has not been verified, plainly
+
+**These files have not been imported into a running n8n Cloud 2.40.2 instance.** No network
+calls were made this step and nothing here runs n8n. They are written to the node schema and
+type versions that release uses, from knowledge rather than from the 2.40.2 docs.
+
+What the 23 tests do check: valid JSON, the top level shape n8n expects, unique node names
+and ids, every connection pointing at a node that exists, every non trigger node reachable,
+node names reading as plain language, **every URL resolving to a real FastAPI route**, every
+method matching what that route accepts, every posted field existing on the pydantic model,
+the three way Switch having three distinct branches, the 72 hour Wait in the real workflow
+and a seconds Wait in the demo one, the retry settings, the error workflow reference, and the
+Code node constants matching Python.
+
+What they cannot check is whether 2.40.2 wants a different `typeVersion` for a given node.
+If something imports with a warning, open the node, re-pick the option, save. **Budget ten
+minutes for that on Friday rather than finding out on Saturday morning.**
+
+### Not done, by instruction
+
+n8n was not run. Cognee is still not integrated. No network calls. `.env` untouched, nothing
+pushed.
+
+### Test suite
+
+```
+$ python -m pytest tests/ -q
+166 passed in 34.04s
+
+$ python -m scripts.check_data
+all checks passed
+```
+
+**Next: Cognee on a one hour timebox, then the backup video by 8pm.**
+
+---
+
 ## Step 6: judge dashboard (Fri 18 Sep, afternoon)
 
 Status: **done, 143 tests pass, one URL, no build step, fully offline.**

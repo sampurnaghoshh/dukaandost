@@ -1,0 +1,95 @@
+{
+  "name": "Dukaan Dost call ended callback",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "dukaan-dost/call-ended",
+        "responseMode": "lastNode",
+        "options": {
+          "rawBody": false
+        }
+      },
+      "id": "e5d4c3b2-0001-4e50-9a05-000000000001",
+      "name": "Sarvam says the call ended",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-640, 300],
+      "webhookId": "f1e2d3c4-3333-4f60-8b06-000000000033",
+      "notes": "n8n issues this URL. Paste it into the Sarvam voice agent as the post call webhook. This is the second of the two URLs to set on demo morning."
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "language": "javaScript",
+        "jsCode": "// Read Sarvam's post call payload and reduce it to the one thing that matters: did the\n// shopkeeper agree. Sarvam returns collected output variables from the agent, and the\n// exact envelope varies by agent version, so every field is looked for in a few likely\n// places rather than assumed.\n//\n// The discount offer response variable is the one the voice agent is configured to\n// collect when it reads the offer out. It is treated as the merchant modifying the offer,\n// not as a number the agent invented: the backend still owns every figure.\n\nconst body = $json.body || $json;\nconst variables = body.output_variables || body.outputVariables || body.variables || {};\nconst transcript = body.transcript || body.conversation_transcript || '';\n\nconst approvalRaw = String(\n  variables.approved\n  ?? variables.approval\n  ?? variables.merchant_approved\n  ?? body.approved\n  ?? ''\n).trim().toLowerCase();\n\nconst discountOfferResponse =\n  variables.discount_offer_response\n  ?? variables.discountOfferResponse\n  ?? variables.offer_response\n  ?? null;\n\nconst callStatus = String(body.status || body.call_status || '').trim().toLowerCase();\n\nconst YES = ['haan', 'ha', 'yes', 'true', 'approved', 'accept', 'accepted', 'bhej do'];\nconst NO = ['nahi', 'nahin', 'no', 'false', 'declined', 'reject', 'rejected', 'mat bhejo'];\n\nlet outcome = 'no_answer';\nif (['no-answer', 'no_answer', 'noanswer', 'busy', 'failed', 'missed'].includes(callStatus)) {\n  outcome = 'no_answer';\n} else if (YES.some((word) => approvalRaw.includes(word))) {\n  outcome = 'approved';\n} else if (NO.some((word) => approvalRaw.includes(word))) {\n  outcome = 'declined';\n}\n\nreturn {\n  json: {\n    call_id: body.call_id || body.callId || body.conversation_id || '',\n    merchant_id: body.merchant_id || variables.merchant_id || 'tea_stall_01',\n    outcome,\n    transcript,\n    modifications: {\n      discount_offer_response: discountOfferResponse,\n      raw_approval: approvalRaw,\n      call_status: callStatus,\n    },\n  },\n};"
+      },
+      "id": "e5d4c3b2-0002-4e50-9a05-000000000002",
+      "name": "Read what the shopkeeper decided",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-400, 300],
+      "notes": "Approved, declined or no answer, plus the discount offer response variable the voice agent collected."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=http://localhost:8000/call/outcome",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "e5d4c3b2-0003-4e50-9a05-000000000003",
+      "name": "Record the outcome in the backend",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-160, 300],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "notes": "This workflow has no parent to inherit base_url from, so the URL sits here. It is listed in the README as the third thing to check on demo morning if you are not on localhost."
+    }
+  ],
+  "connections": {
+    "Sarvam says the call ended": {
+      "main": [
+        [
+          {
+            "node": "Read what the shopkeeper decided",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read what the shopkeeper decided": {
+      "main": [
+        [
+          {
+            "node": "Record the outcome in the backend",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "errorWorkflow": "REPLACE_WITH_ERROR_HANDLER_WORKFLOW_ID",
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all"
+  },
+  "pinData": {},
+  "meta": {
+    "instanceId": "dukaan-dost"
+  },
+  "tags": [
+    {
+      "name": "dukaan-dost"
+    }
+  ]
+}

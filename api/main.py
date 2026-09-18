@@ -26,12 +26,14 @@ import os
 import uuid
 from datetime import date, datetime
 
+import httpx
+
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import BaseModel, Field
 
-from core import (campaign as campaign_flow, fixtures, generate, holdout, ledger, llm,
-                  run_night, simulate, speech, triage)
+from core import (campaign as campaign_flow, dispatch, fixtures, generate, holdout, ledger,
+                  llm, run_night, simulate, speech, triage)
 from core.holdout import HOLDOUT_SHARE
 from memory import store
 from voice import local_soundbox
@@ -68,6 +70,9 @@ class SimulateRequest(MerchantRequest):
 
 class CallRequest(MerchantRequest):
     candidates: list[dict] | None = None
+    # Where to POST the Decision once the merchant answers. The n8n Wait node generates this
+    # and hands it over, so the workflow can pause on a real event instead of polling.
+    callback_url: str | None = None
 
 
 class LaunchRequest(BaseModel):
@@ -109,6 +114,27 @@ def _log(stage: str, outcome: str, headline: str, **extra) -> None:
     run_night.log_decision(
         dict(extra, stage=stage, decision=outcome, headline=headline, via="api"),
         run_night.LOG_PATH)
+
+
+def _notify_callback(call_id: str, decision) -> None:
+    """Tells whoever is waiting that the merchant answered. Best effort, never fatal.
+
+    The n8n Wait node parks the whole nightly run on a resume URL. This is what wakes it.
+    If nobody is waiting, or the post fails, the call still settled and the log still has it.
+    """
+    call = local_soundbox.PENDING.get(call_id) or {}
+    url = call.get("callback_url")
+    if not url:
+        return
+    payload = json.loads(decision.model_dump_json())
+    try:
+        with httpx.Client(timeout=10.0) as client:
+            client.post(url, json=payload)
+        _log("call_callback", "delivered", "woke the waiting workflow",
+             merchant_id=decision.merchant_id, call_id=call_id)
+    except Exception as exc:
+        _log("call_callback", "failed", "could not reach the waiting workflow: %s"
+             % type(exc).__name__, merchant_id=decision.merchant_id, call_id=call_id)
 
 
 def _resolve_today(conn, merchant_id: str, today: str | None) -> date:
@@ -263,6 +289,7 @@ def post_call(request: CallRequest) -> dict:
     # The winning candidate travels with the call, so the mid call launch dispatches exactly
     # what the merchant was read out, not a re-derivation of it.
     local_soundbox.PENDING[decision.call_id]["chosen"] = recommended
+    local_soundbox.PENDING[decision.call_id]["callback_url"] = request.callback_url
 
     _log("call", decision.outcome, "soundbox call opened for %s" % recommended["title"],
          merchant_id=request.merchant_id, today=ranking["today"],
@@ -558,6 +585,8 @@ async def post_soundbox_reply(call_id: str = Form(...),
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
     decision = payload.get("decision")
+    if decision is not None:
+        _notify_callback(call_id, decision)
     _log("voice_reply", payload["status"],
          "heard %r" % (payload.get("transcript") or ""),
          merchant_id=local_soundbox.PENDING[call_id]["merchant_id"], call_id=call_id,
@@ -573,6 +602,7 @@ def post_soundbox_button(request: ButtonRequest) -> dict:
         decision = local_soundbox.press_button(request.call_id, request.answer)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    _notify_callback(request.call_id, decision)
 
     _log("voice_reply", decision.outcome, "button pressed: %s" % request.answer,
          merchant_id=decision.merchant_id, call_id=request.call_id,
@@ -874,3 +904,225 @@ def get_dashboard_state(merchant_id: str = DEFAULT_MERCHANT) -> dict:
 def get_dashboard() -> HTMLResponse:
     with open(DASHBOARD_PATH, encoding="utf-8") as handle:
         return HTMLResponse(handle.read())
+
+
+# --------------------------------------------------------------------------
+# Endpoints the n8n workflows need
+#
+# Each of these exists because a node on the canvas calls it. They are deliberately thin:
+# the workflow owns the sequencing, this service owns the arithmetic.
+# --------------------------------------------------------------------------
+
+
+class LogDecisionRequest(BaseModel):
+    stage: str
+    decision: str
+    headline: str = ""
+    merchant_id: str = DEFAULT_MERCHANT
+    detail: dict = Field(default_factory=dict)
+    source: str = "n8n"
+
+
+class DispatchRequest(BaseModel):
+    merchant_id: str = DEFAULT_MERCHANT
+    call_id: str
+    treated: list[str]
+    control: list[str]
+    seed: int = holdout.DEFAULT_SEED
+
+
+class LearningUpdateRequest(BaseModel):
+    merchant_id: str = DEFAULT_MERCHANT
+    campaign_id: str
+
+
+class CallOutcomeRequest(BaseModel):
+    call_id: str
+    outcome: str = Field(description="approved, declined or no_answer")
+    transcript: str = ""
+    merchant_id: str = DEFAULT_MERCHANT
+    modifications: dict = Field(default_factory=dict)
+    source: str = "sarvam_webhook"
+
+
+@app.post("/decisions")
+def post_decision(request: LogDecisionRequest) -> dict:
+    """Writes one line into the decision log from the workflow.
+
+    The silent nights, the declines and the no answers all arrive here. A night the agent
+    decided to do nothing is a decision, and the dashboard reads it the same as any other.
+    """
+    _log(request.stage, request.decision, request.headline,
+         merchant_id=request.merchant_id, detail=request.detail, source=request.source)
+    return {"status": "logged", "stage": request.stage, "decision": request.decision}
+
+
+@app.post("/campaign/dispatch")
+def post_campaign_dispatch(request: DispatchRequest) -> dict:
+    """Dispatches a split that the n8n Code node computed.
+
+    The workflow owns the assignment so the split is visible on the canvas rather than
+    hidden in a service. This endpoint still checks it: the arms must be disjoint, must
+    cover the segment, and must be the right sizes, or nothing is sent. It also reports
+    whether the workflow's split matches what core/holdout.py would have produced, so a
+    drift between the two is visible rather than silent.
+    """
+    call = local_soundbox.PENDING.get(request.call_id)
+    chosen = (call or {}).get("chosen")
+    brief: Brief | None = call["brief"] if call else None
+    if brief is None or chosen is None:
+        raise HTTPException(status_code=404,
+                            detail="no open call %s to dispatch from" % request.call_id)
+
+    assignment = {
+        "campaign_id": request.call_id,
+        "seed": request.seed,
+        "segment_size": len(set(request.treated) | set(request.control)),
+        "treated": sorted(request.treated),
+        "control": sorted(request.control),
+        "treated_count": len(request.treated),
+        "holdout_count": len(request.control),
+        "holdout_share": HOLDOUT_SHARE,
+        "method": "computed in the n8n Code node, verified here",
+    }
+    problems = holdout.validate(assignment)
+    if problems:
+        _log("campaign_dispatch", "refused", "; ".join(problems),
+             merchant_id=request.merchant_id, call_id=request.call_id)
+        raise HTTPException(status_code=400,
+                            detail="refusing to dispatch a broken split: %s"
+                                   % "; ".join(problems))
+
+    canonical = holdout.assign(request.call_id,
+                               list(request.treated) + list(request.control),
+                               seed=request.seed)
+    matches = (canonical["treated"] == assignment["treated"]
+               and canonical["control"] == assignment["control"])
+
+    conn = ledger.connect()
+    memory = store.connect()
+    try:
+        shop_name = ledger.merchant(conn, request.merchant_id)["name"]
+        triage_result = triage.score(request.merchant_id,
+                                     ledger.data_as_of(conn, request.merchant_id), conn=conn)
+        facts = {row["customer_id"]: row
+                 for row in triage_result["signals"]["lapsed_regulars"]["detail"]}
+
+        campaign_id = campaign_flow.new_campaign_id()
+        store.save_assignments(memory, campaign_id, assignment)
+        record = store.record_campaign(memory, campaign_id, request.merchant_id, chosen)
+        sent = dispatch.dispatch(memory, campaign_id, assignment, chosen, shop_name, facts)
+    finally:
+        conn.close()
+        memory.close()
+
+    CAMPAIGNS[campaign_id] = {
+        "campaign_id": campaign_id,
+        "merchant_id": request.merchant_id,
+        "call_id": request.call_id,
+        "candidate_id": chosen.get("candidate_id"),
+        "status": "dispatched_awaiting_measurement",
+    }
+    _log("campaign_dispatch", "dispatched",
+         "%d messaged and %d held back for campaign %s"
+         % (sent["rendered"], len(assignment["control"]), campaign_id),
+         merchant_id=request.merchant_id, call_id=request.call_id, campaign_id=campaign_id,
+         matches_core_holdout=matches, messages=sent["messages"])
+    return {
+        "status": "dispatched",
+        "campaign_id": campaign_id,
+        "sequence": record["sequence"],
+        "treated_count": assignment["treated_count"],
+        "holdout_count": assignment["holdout_count"],
+        "matches_core_holdout": matches,
+        "rendered": sent["rendered"],
+        "blocked": sent["blocked"],
+        "production_channel": sent["production_channel"],
+        "messages": sent["messages"],
+    }
+
+
+@app.post("/learning/update")
+def post_learning_update(request: LearningUpdateRequest) -> dict:
+    """Writes the lesson back: what was predicted, what was measured, what is now believed.
+
+    /measure files the measurement. This is the step that reads it back and reports the
+    refreshed belief, so the workflow has a node that visibly closes the loop and the
+    dashboard gets a log line saying what the shop just taught the agent.
+    """
+    memory = store.connect()
+    try:
+        record = store.campaign(memory, request.campaign_id)
+        row = memory.execute("SELECT * FROM measurements WHERE campaign_id = ?",
+                             (request.campaign_id,)).fetchone()
+        if record is None or row is None:
+            _log("learning_update", "not_ready", "nothing measured for that campaign yet",
+                 merchant_id=request.merchant_id, campaign_id=request.campaign_id)
+            return {"status": "not_ready", "campaign_id": request.campaign_id,
+                    "reason": "measure the campaign before writing the lesson back"}
+
+        measurement = dict(row)
+        scale = store.learned_response_scale(
+            memory, request.merchant_id, simulate.PRIOR_OFFER_UPLIFT,
+            baseline_rate=store.last_baseline_rate(memory, request.merchant_id))
+        believed_now = {
+            level: simulate.PRIOR_OFFER_UPLIFT[level] * scale["scale"]
+            for level in simulate.OFFER_LEVELS
+        }
+    finally:
+        memory.close()
+
+    _log("learning_update", "recorded",
+         "predicted %.3f, measured %.3f, error %.3f"
+         % (measurement["predicted_uplift"] or 0.0, measurement["lift"],
+            measurement["uplift_error"] or 0.0),
+         merchant_id=request.merchant_id, campaign_id=request.campaign_id,
+         predicted_uplift=measurement["predicted_uplift"],
+         actual_uplift=measurement["lift"],
+         uplift_error=measurement["uplift_error"],
+         profit_error=measurement["profit_error"],
+         learned_scale=scale)
+    return {
+        "status": "recorded",
+        "campaign_id": request.campaign_id,
+        "predicted_uplift": measurement["predicted_uplift"],
+        "actual_uplift": measurement["lift"],
+        "uplift_error": measurement["uplift_error"],
+        "predicted_profit": measurement["predicted_profit"],
+        "actual_profit": measurement["actual_profit"],
+        "profit_error": measurement["profit_error"],
+        "learned_response_scale": scale,
+        "believed_uplift_now": believed_now,
+    }
+
+
+@app.post("/call/outcome")
+def post_call_outcome(request: CallOutcomeRequest) -> dict:
+    """Records how a call ended. This is where Sarvam's webhook callback lands.
+
+    The soundbox settles its own calls through /soundbox/button and /soundbox/reply. Real
+    telephony has no browser, so the outcome arrives here instead and produces the same
+    Decision, which is the point of having one voice interface with two backends.
+    """
+    outcome = str(request.outcome).strip().lower()
+    if outcome not in ("approved", "declined", "no_answer"):
+        raise HTTPException(status_code=400,
+                            detail="outcome must be approved, declined or no_answer")
+    try:
+        decision = local_soundbox.settle(request.call_id, outcome,
+                                         transcript=request.transcript, via=request.source)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    _notify_callback(request.call_id, decision)
+    _log("call_outcome", outcome, "call %s ended as %s" % (request.call_id, outcome),
+         merchant_id=request.merchant_id, call_id=request.call_id,
+         transcript=request.transcript, modifications=request.modifications,
+         decision=json.loads(decision.model_dump_json()))
+    return {
+        "status": "recorded",
+        "call_id": request.call_id,
+        "outcome": outcome,
+        "approved": decision.approved,
+        "decision": json.loads(decision.model_dump_json()),
+    }

@@ -1,0 +1,192 @@
+{
+  "name": "Dukaan Dost nightly run",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 21 * * *"
+            }
+          ]
+        }
+      },
+      "id": "a1f0c2d4-0001-4a10-9f01-000000000001",
+      "name": "Every night at 9pm",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [-640, 300]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "base-url-assignment",
+              "name": "base_url",
+              "value": "http://localhost:8000",
+              "type": "string"
+            },
+            {
+              "id": "merchants-assignment",
+              "name": "merchants",
+              "value": "={{ [\"tea_stall_01\"] }}",
+              "type": "array"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a1f0c2d4-0002-4a10-9f01-000000000002",
+      "name": "Where the backend lives",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-420, 300],
+      "notes": "THE ONE PLACE THE BACKEND URL IS WRITTEN. On demo morning paste the cloudflared tunnel here and nothing else changes."
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "merchants",
+        "options": {
+          "destinationFieldName": "merchant_id"
+        }
+      },
+      "id": "a1f0c2d4-0003-4a10-9f01-000000000003",
+      "name": "One item per merchant",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [-200, 300]
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "id": "a1f0c2d4-0004-4a10-9f01-000000000004",
+      "name": "Take the merchants one at a time",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [20, 300],
+      "notes": "Forty million merchants would fan out here. Triage is arithmetic, so the expensive path only opens for the few percent that clear the threshold."
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "REPLACE_WITH_RUN_ONE_MERCHANT_WORKFLOW_ID",
+          "mode": "id"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "merchant_id": "={{ $json.merchant_id }}",
+            "base_url": "={{ $('Where the backend lives').first().json.base_url }}"
+          },
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "mode": "each",
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "id": "a1f0c2d4-0005-4a10-9f01-000000000005",
+      "name": "Run the night for this merchant",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [260, 380],
+      "notes": "Calls the run_one_merchant sub workflow. Paste its workflow id here after importing it."
+    },
+    {
+      "parameters": {},
+      "id": "a1f0c2d4-0006-4a10-9f01-000000000006",
+      "name": "All merchants done",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [260, 200]
+    }
+  ],
+  "connections": {
+    "Every night at 9pm": {
+      "main": [
+        [
+          {
+            "node": "Where the backend lives",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Where the backend lives": {
+      "main": [
+        [
+          {
+            "node": "One item per merchant",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "One item per merchant": {
+      "main": [
+        [
+          {
+            "node": "Take the merchants one at a time",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Take the merchants one at a time": {
+      "main": [
+        [
+          {
+            "node": "All merchants done",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Run the night for this merchant",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run the night for this merchant": {
+      "main": [
+        [
+          {
+            "node": "Take the merchants one at a time",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "errorWorkflow": "REPLACE_WITH_ERROR_HANDLER_WORKFLOW_ID",
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all",
+    "saveExecutionProgress": true
+  },
+  "pinData": {},
+  "meta": {
+    "instanceId": "dukaan-dost"
+  },
+  "tags": [
+    {
+      "name": "dukaan-dost"
+    }
+  ]
+}

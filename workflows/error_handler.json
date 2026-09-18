@@ -1,0 +1,105 @@
+{
+  "name": "Dukaan Dost error handler",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "f6e5d4c3-0001-4f70-8c07-000000000001",
+      "name": "Something failed in the night",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [-640, 300],
+      "notes": "Set as the error workflow on every other workflow here. A run that dies quietly is worse than one that dies loudly."
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "language": "javaScript",
+        "jsCode": "// Flatten n8n's error payload into one decision line, so a failure lands in the same log\n// the dashboard already reads. A failed night is a fact about the night.\n\nconst execution = $json.execution || {};\nconst workflow = $json.workflow || {};\nconst error = execution.error || $json.error || {};\nconst lastNode = execution.lastNodeExecuted || error.node || 'unknown node';\n\nreturn {\n  json: {\n    stage: 'workflow_error',\n    decision: 'failed',\n    headline: `${workflow.name || 'a workflow'} stopped at ${lastNode}`,\n    merchant_id: 'tea_stall_01',\n    source: 'n8n',\n    detail: {\n      workflow_id: workflow.id || null,\n      workflow_name: workflow.name || null,\n      execution_id: execution.id || null,\n      execution_url: execution.url || null,\n      last_node: lastNode,\n      message: error.message || String(error) || 'no message',\n      retry_of: execution.retryOf || null,\n      mode: execution.mode || null,\n    },\n  },\n};"
+      },
+      "id": "f6e5d4c3-0002-4f70-8c07-000000000002",
+      "name": "Turn the failure into a log line",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-400, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=http://localhost:8000/decisions",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "f6e5d4c3-0003-4f70-8c07-000000000003",
+      "name": "Write the failure to the decision log",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-160, 300],
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000,
+      "notes": "Continues on error on purpose. If the backend is the thing that fell over, this workflow must not fail as well and hide the original error."
+    },
+    {
+      "parameters": {},
+      "id": "f6e5d4c3-0004-4f70-8c07-000000000004",
+      "name": "Failure recorded, nothing silently lost",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [80, 300]
+    }
+  ],
+  "connections": {
+    "Something failed in the night": {
+      "main": [
+        [
+          {
+            "node": "Turn the failure into a log line",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Turn the failure into a log line": {
+      "main": [
+        [
+          {
+            "node": "Write the failure to the decision log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write the failure to the decision log": {
+      "main": [
+        [
+          {
+            "node": "Failure recorded, nothing silently lost",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all"
+  },
+  "pinData": {},
+  "meta": {
+    "instanceId": "dukaan-dost"
+  },
+  "tags": [
+    {
+      "name": "dukaan-dost"
+    }
+  ]
+}
