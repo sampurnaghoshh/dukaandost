@@ -157,3 +157,15 @@ def raw_item_names(conn: sqlite3.Connection, merchant_id: str) -> list:
         "SELECT raw_item_name, COUNT(*) AS n FROM transactions WHERE merchant_id = ? "
         "GROUP BY raw_item_name ORDER BY n DESC", (merchant_id,)).fetchall()
     return [row["raw_item_name"] for row in rows]
+
+
+def customer_names(conn: sqlite3.Connection, merchant_id: str) -> dict:
+    """{customer_id: name}. Identity, so only dispatch asks for it.
+
+    Triage, the simulator and the holdout work on ids alone and never see a name. A name is
+    needed once, to write "Namaste Ramesh" on a message, and that is the only place it is
+    resolved. Insight everywhere, identity at the last possible moment.
+    """
+    rows = conn.execute("SELECT customer_id, name FROM customers WHERE merchant_id = ?",
+                        (merchant_id,)).fetchall()
+    return {row["customer_id"]: row["name"] for row in rows}

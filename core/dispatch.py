@@ -33,15 +33,22 @@ def _message_id(campaign_id: str, customer_id: str) -> str:
 
 def render(campaign_id: str, assignment: dict, chosen: dict, shop_name: str,
            customer_facts: dict | None = None,
-           language: str = DEFAULT_LANGUAGE) -> list:
-    """One message per treated customer. The control group gets nothing, on purpose."""
+           language: str = DEFAULT_LANGUAGE,
+           customer_names: dict | None = None) -> list:
+    """One message per treated customer. The control group gets nothing, on purpose.
+
+    This is the only step that turns a customer id into a person's name. Everything upstream
+    reasons about ids, because an analyst does not need to know who anyone is. The message
+    does, so the name is resolved here and nowhere earlier.
+    """
     template = chosen.get("message_template") or ""
     facts = customer_facts or {}
+    names = customer_names or {}
     rendered = []
     for customer_id in assignment["treated"]:
         detail = facts.get(customer_id, {})
         body = generate.fill_customer_message(
-            template, customer_id, shop_name, chosen,
+            template, names.get(customer_id) or customer_id, shop_name, chosen,
             days_absent=detail.get("days_since_last_visit"))
 
         # A placeholder that code could not fill must never reach a customer. Sending
@@ -55,6 +62,7 @@ def render(campaign_id: str, assignment: dict, chosen: dict, shop_name: str,
             "message_id": _message_id(campaign_id, customer_id),
             "campaign_id": campaign_id,
             "customer_id": customer_id,
+            "customer_name": names.get(customer_id) or customer_id,
             "language": language,
             "body": body,
             "channel": CHANNEL,
@@ -65,11 +73,12 @@ def render(campaign_id: str, assignment: dict, chosen: dict, shop_name: str,
 
 def dispatch(conn: sqlite3.Connection, campaign_id: str, assignment: dict, chosen: dict,
              shop_name: str, customer_facts: dict | None = None,
-             language: str = DEFAULT_LANGUAGE) -> dict:
+             language: str = DEFAULT_LANGUAGE, customer_names: dict | None = None) -> dict:
     """Renders and records. Returns what would have been sent, and to whom it was not."""
     from memory import store
 
-    messages = render(campaign_id, assignment, chosen, shop_name, customer_facts, language)
+    messages = render(campaign_id, assignment, chosen, shop_name, customer_facts, language,
+                      customer_names)
     store.save_messages(conn, campaign_id, messages)
     blocked = [row for row in messages if row["status"] != "rendered_not_sent"]
 

@@ -365,3 +365,92 @@ def test_launch_assigns_a_holdout_and_dispatches_only_to_the_treated(client):
 def _candidates():
     from core import fixtures
     return [dict(item, source="fixture") for item in fixtures.PLACEHOLDER_CANDIDATES]
+
+
+# ---------------------------------------------------------------- names
+#
+# Identity is resolved once, at dispatch. Everything upstream works on ids.
+
+
+def test_every_customer_has_a_unique_name(conn):
+    from core import ledger
+    names = ledger.customer_names(conn, MERCHANT_ID)
+    assert len(names) == 400
+    assert all(name and not any(ch.isdigit() for ch in name) for name in names.values())
+    assert len(set(names.values())) == len(names)
+
+
+def test_the_message_greets_the_customer_by_name(tmp_path, triage_result, conn):
+    from core import ledger
+    memory = store.connect(str(tmp_path / "memory.db"))
+    try:
+        ranking = simulate.rank(MERCHANT_ID, _candidates(), triage_result, conn=conn,
+                                memory=memory)
+        chosen = dict(ranking["recommended"],
+                      message_template="Namaste {customer_name}, {shop_name} pe {offer}")
+        lapsed = triage_result["signals"]["lapsed_regulars"]
+        assignment = holdout.assign("camp_named", lapsed["customer_ids"])
+        names = ledger.customer_names(conn, MERCHANT_ID)
+
+        sent = dispatch.dispatch(memory, "camp_named", assignment, chosen,
+                                 "Ramesh Tea Stall",
+                                 customer_facts={row["customer_id"]: row
+                                                 for row in lapsed["detail"]},
+                                 customer_names=names)
+
+        for row in sent["messages"]:
+            assert names[row["customer_id"]] in row["body"], row["body"]
+            assert row["customer_id"] not in row["body"], (
+                "the raw id leaked into a customer facing message")
+            assert row["customer_name"] == names[row["customer_id"]]
+    finally:
+        memory.close()
+
+
+def test_dispatch_falls_back_to_the_id_when_no_name_is_known(tmp_path, triage_result, conn):
+    """A missing name must not block a message or crash the run."""
+    memory = store.connect(str(tmp_path / "memory.db"))
+    try:
+        ranking = simulate.rank(MERCHANT_ID, _candidates(), triage_result, conn=conn,
+                                memory=memory)
+        chosen = dict(ranking["recommended"],
+                      message_template="Namaste {customer_name}, {shop_name} pe {offer}")
+        assignment = holdout.assign("camp_nameless", TWELVE)
+        sent = dispatch.dispatch(memory, "camp_nameless", assignment, chosen,
+                                 "Ramesh Tea Stall", customer_names={})
+        assert sent["blocked"] == 0
+        for row in sent["messages"]:
+            assert row["customer_id"] in row["body"]
+    finally:
+        memory.close()
+
+
+def test_the_id_is_still_the_key_everywhere_else(tmp_path, triage_result, conn):
+    """Names are for the message. Assignments, messages and outcomes key on the id."""
+    from core import ledger
+    memory = store.connect(str(tmp_path / "memory.db"))
+    try:
+        lapsed = triage_result["signals"]["lapsed_regulars"]
+        assignment = holdout.assign_and_save(memory, "camp_keys", lapsed["customer_ids"])
+        ranking = simulate.rank(MERCHANT_ID, _candidates(), triage_result, conn=conn,
+                                memory=memory)
+        dispatch.dispatch(memory, "camp_keys", assignment, ranking["recommended"],
+                          "Ramesh Tea Stall",
+                          customer_facts={row["customer_id"]: row for row in lapsed["detail"]},
+                          customer_names=ledger.customer_names(conn, MERCHANT_ID))
+
+        stored = store.assignments(memory, "camp_keys")
+        assert set(stored["treated"]) | set(stored["control"]) == set(lapsed["customer_ids"])
+        for message in store.messages(memory, "camp_keys"):
+            assert message["customer_id"].startswith("C")
+    finally:
+        memory.close()
+
+
+def test_triage_never_carries_a_customer_name(triage_result):
+    """The analytical layer sees ids only. Insight everywhere, identity at dispatch."""
+    detail = triage_result["signals"]["lapsed_regulars"]["detail"]
+    assert detail
+    for row in detail:
+        assert "name" not in row
+        assert "customer_name" not in row

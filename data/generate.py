@@ -21,6 +21,25 @@ from datetime import date, datetime, timedelta
 
 SEED = 20260917
 
+# Names are drawn from their own generator, never from the main one. Taking them from `rng`
+# would shift every later draw and quietly hand the twelve lapsed regulars different ids,
+# which would invalidate data/ground_truth.json and every number written about this ledger.
+NAME_SEED = SEED + 7
+
+# A Bengaluru tea stall serves the whole city, so the pool mixes South and North Indian
+# names. Paired with a surname initial, the way a shopkeeper would actually note a regular
+# down, which also keeps four hundred customers from colliding.
+FIRST_NAMES = (
+    "Aarav", "Anand", "Anita", "Anjali", "Arjun", "Asha", "Ashwin", "Balaji", "Bhavana",
+    "Chaitra", "Deepak", "Dinesh", "Divya", "Ganesh", "Girish", "Gita", "Harish", "Jyoti",
+    "Karthik", "Kavya", "Kiran", "Lakshmi", "Latha", "Madhuri", "Mahesh", "Manoj", "Meena",
+    "Murali", "Nandini", "Naveen", "Nithya", "Padma", "Pooja", "Prakash", "Praveen", "Priya",
+    "Raghav", "Rajesh", "Ramesh", "Ravi", "Rekha", "Roopa", "Sarita", "Sathish", "Shalini",
+    "Shankar", "Shobha", "Sneha", "Sowmya", "Srinivas", "Sunil", "Suresh", "Swathi", "Usha",
+    "Vandana", "Venkat", "Vidya", "Vijay", "Vivek", "Yogesh",
+)
+SURNAME_INITIALS = ("A", "B", "D", "G", "H", "J", "K", "M", "N", "P", "R", "S", "T", "V")
+
 MERCHANT_ID = "tea_stall_01"
 MERCHANT_NAME = "Ramesh Tea Stall"
 MERCHANT_CATEGORY = "tea_stall"
@@ -115,6 +134,7 @@ class Customer:
                  lapses: bool = False, stops_on: date | None = None):
         self.customer_id = None
         self.upi_id = None
+        self.name = None
         self.segment = segment
         self.base_lambda = base_lambda
         self.joined = joined
@@ -151,6 +171,17 @@ def build_customers(rng: random.Random) -> list:
     rng.shuffle(customers)
     for index, customer in enumerate(customers, start=1):
         customer.assign_id(index)
+
+    # Names come last, out of a separate generator, so nothing above this line moves.
+    names = random.Random(NAME_SEED)
+    taken = set()
+    for customer in customers:
+        while True:
+            name = "%s %s." % (names.choice(FIRST_NAMES), names.choice(SURNAME_INITIALS))
+            if name not in taken:
+                taken.add(name)
+                customer.name = name
+                break
     return customers
 
 
@@ -313,6 +344,7 @@ CREATE TABLE merchants (
 CREATE TABLE customers (
     customer_id   TEXT PRIMARY KEY,
     merchant_id   TEXT NOT NULL,
+    name          TEXT NOT NULL,
     upi_id        TEXT NOT NULL,
     segment       TEXT NOT NULL,
     first_seen    TEXT,
@@ -396,9 +428,9 @@ def write_db(customers: list, rows: list) -> None:
          HISTORY_START.isoformat(), TODAY.isoformat()),
     )
     conn.executemany(
-        "INSERT INTO customers VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO customers VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
         [
-            (c.customer_id, MERCHANT_ID, c.upi_id, c.segment,
+            (c.customer_id, MERCHANT_ID, c.name, c.upi_id, c.segment,
              stats.get(c.customer_id, {}).get("first"),
              stats.get(c.customer_id, {}).get("last"),
              len(stats.get(c.customer_id, {}).get("txns", ())),
@@ -430,6 +462,7 @@ def write_ground_truth(lapsed: list, lapsed_rows: list, combined: float) -> None
         entry = per_customer[customer.customer_id]
         detail.append({
             "customer_id": customer.customer_id,
+            "name": customer.name,
             "last_visit": entry["last"].isoformat(),
             "avg_monthly_spend": round(entry["window_spend"] / (VALUE_WINDOW_DAYS / 30.0), 2),
         })

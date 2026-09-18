@@ -371,7 +371,9 @@ def post_campaign_launch(request: LaunchRequest) -> dict:
         facts = {row["customer_id"]: row for row in lapsed["detail"]}
 
         launched = campaign_flow.launch(memory, request.merchant_id, chosen, shop_name,
-                                        customer_ids, customer_facts=facts)
+                                        customer_ids, customer_facts=facts,
+                                        customer_names=ledger.customer_names(
+                                            conn, request.merchant_id))
     finally:
         conn.close()
         memory.close()
@@ -804,11 +806,20 @@ def _latest_campaign(memory, merchant_id: str) -> dict | None:
     bodies = {message["customer_id"]: message
               for message in store.messages(memory, campaign_id)}
 
+    conn = ledger.connect()
+    try:
+        names = ledger.customer_names(conn, merchant_id)
+    finally:
+        conn.close()
+
     treated = [{"customer_id": customer_id,
+                "customer_name": names.get(customer_id, customer_id),
                 "body": bodies.get(customer_id, {}).get("body", ""),
                 "status": bodies.get(customer_id, {}).get("status", "not rendered")}
                for customer_id in assignment["treated"]]
-    control = [{"customer_id": customer_id, "body": None,
+    control = [{"customer_id": customer_id,
+                "customer_name": names.get(customer_id, customer_id),
+                "body": None,
                 "status": "held back, never messaged"}
                for customer_id in assignment["control"]]
 
@@ -1044,7 +1055,9 @@ def post_campaign_dispatch(request: DispatchRequest) -> dict:
         campaign_id = campaign_flow.new_campaign_id()
         store.save_assignments(memory, campaign_id, assignment)
         record = store.record_campaign(memory, campaign_id, request.merchant_id, chosen)
-        sent = dispatch.dispatch(memory, campaign_id, assignment, chosen, shop_name, facts)
+        sent = dispatch.dispatch(memory, campaign_id, assignment, chosen, shop_name, facts,
+                                 customer_names=ledger.customer_names(conn,
+                                                                      request.merchant_id))
     finally:
         conn.close()
         memory.close()

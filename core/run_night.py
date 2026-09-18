@@ -306,7 +306,8 @@ def build_brief(merchant_id: str, merchant_name: str, triage_result: dict, chose
     )
 
 
-def print_brief(brief: Brief, triage_result: dict, chosen: dict) -> None:
+def print_brief(brief: Brief, triage_result: dict, chosen: dict,
+                customer_names: dict | None = None) -> None:
     _rule("Call brief")
     print("  action     %s   [%s]" % (brief.title, brief.candidate_id))
     print("  script     written by the %s, every figure filled by code" % brief.script_source)
@@ -321,14 +322,16 @@ def print_brief(brief: Brief, triage_result: dict, chosen: dict) -> None:
         _rule("Customer messages")
         print("  TEMPLATE: %s" % brief.customer_message_template)
         print("")
+        names = customer_names or {}
         for row in triage_result["signals"]["lapsed_regulars"]["detail"][:SAMPLE_MESSAGE_COUNT]:
+            name = names.get(row["customer_id"], row["customer_id"])
             filled = generate.fill_customer_message(
-                brief.customer_message_template, row["customer_id"], brief.merchant_name,
+                brief.customer_message_template, name, brief.merchant_name,
                 chosen, days_absent=row["days_since_last_visit"])
-            print("  %s  %s" % (row["customer_id"], filled))
+            print("  %-10s %s" % (row["customer_id"], filled))
         print("")
-        print("  The customer id stands in for the name. In production Paytm fills it and the")
-        print("  merchant never sees a phone number.")
+        print("  The name is resolved at dispatch and nowhere earlier. Triage, the simulator")
+        print("  and the holdout all work on ids, and the merchant never sees a phone number.")
 
 
 # --------------------------------------------------------------------------
@@ -453,7 +456,8 @@ def main(argv: list | None = None) -> int:
             else:
                 print("  Say nothing tonight. Every candidate loses money or breaks a guardrail.")
         if brief is not None:
-            print_brief(brief, triage_result, ranking["recommended"])
+            print_brief(brief, triage_result, ranking["recommended"],
+                        ledger.customer_names(conn, args.merchant))
         if ranking is None:
             _rule("Generation and simulator")
             print("  Skipped. Triage decided this merchant is not worth a call tonight, so no")

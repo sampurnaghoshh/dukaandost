@@ -259,3 +259,25 @@ def test_a_corrupt_export_does_not_take_the_page_down(fresh_client):
     response = fresh_client.get("/dashboard/state")
     assert response.status_code == 200
     assert response.json()["learning"]["hidden_truth"] is None
+
+
+def test_the_dispatch_panel_shows_names_beside_the_ids(after_campaign):
+    """A judge reads names off the screen, not C0073."""
+    campaign = after_campaign.get("/dashboard/state").json()["campaign"]
+    for row in campaign["treated"] + campaign["control"]:
+        assert row["customer_name"], row
+        assert row["customer_name"] != row["customer_id"], (
+            "the name fell back to the id, so the lookup is not reaching the ledger")
+        assert not any(ch.isdigit() for ch in row["customer_name"])
+
+
+def test_the_treated_messages_greet_people_by_name(after_campaign):
+    campaign = after_campaign.get("/dashboard/state").json()["campaign"]
+    greeted = [row for row in campaign["treated"] if row["customer_name"] in row["body"]]
+    assert greeted, "no message used the customer's name"
+
+
+def test_the_page_renders_the_name_and_keeps_the_id_visible(fresh_client):
+    body = fresh_client.get("/dashboard").text
+    assert "customer_name" in body
+    assert "customer_id" in body

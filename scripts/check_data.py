@@ -90,6 +90,16 @@ def main() -> int:
     require({"daily_regular", "weekly", "occasional"} <= seg_names,
             "daily, weekly and occasional segments all present")
 
+    named = q("SELECT COUNT(*) FROM customers WHERE name IS NOT NULL AND name != ''").fetchone()[0]
+    distinct_names = q("SELECT COUNT(DISTINCT name) FROM customers").fetchone()[0]
+    sample = [r["name"] for r in q("SELECT name FROM customers ORDER BY customer_id LIMIT 6")]
+    print("   named customers      : %d, %d distinct" % (named, distinct_names))
+    print("   sample names         : %s" % ", ".join(sample))
+    require(named == customers, "every customer has a name")
+    require(distinct_names == customers, "no two customers share a name")
+    digits = q("SELECT COUNT(*) FROM customers WHERE name GLOB '*[0-9]*'").fetchone()[0]
+    require(digits == 0, "no customer name contains a digit")
+
     # ----------------------------------------------------------- date range
     heading("Date range")
     first, last = q("SELECT MIN(txn_date), MAX(txn_date) FROM transactions").fetchone()

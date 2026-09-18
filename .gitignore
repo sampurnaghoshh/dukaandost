@@ -3,3 +3,7 @@
 __pycache__/
 *.db
 logs/
+
+# Sarvam bulk outbound contact lists. Real phone numbers, never committed.
+demo_contacts.csv
+*_contacts.csv

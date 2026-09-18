@@ -45,6 +45,7 @@ def run(merchant_id: str, campaigns: int, memory_path: str | None,
         lapsed = triage_result["signals"]["lapsed_regulars"]
         customer_ids = list(lapsed["customer_ids"])
         facts = {row["customer_id"]: row for row in lapsed["detail"]}
+        names = ledger.customer_names(conn, merchant_id)
         value_each = lapsed["value_at_risk_monthly"] / max(1, lapsed["count"])
 
         if use_fixtures:
@@ -68,7 +69,8 @@ def run(merchant_id: str, campaigns: int, memory_path: str | None,
             campaign_id = "camp_%s_%02d" % (merchant_id, number)
             launched = campaign.launch(memory, merchant_id, chosen, shop_name, customer_ids,
                                        customer_facts=facts, campaign_id=campaign_id,
-                                       seed=holdout.DEFAULT_SEED + number)
+                                       seed=holdout.DEFAULT_SEED + number,
+                                       customer_names=names)
             campaign.observe(memory, campaign_id, launched["assignment"],
                              chosen["estimates"]["offer_level"], value_each)
             measurement = campaign.close(memory, campaign_id)

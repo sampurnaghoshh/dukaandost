@@ -82,10 +82,13 @@
 
   .msgs { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; }
   .msg { border: 1px solid var(--line); border-radius: 9px; padding: 12px 14px; background: #fff; }
-  .msg .who { font-size: 12px; letter-spacing: 0.07em; text-transform: uppercase;
-              color: var(--muted); margin-bottom: 6px; }
+  .msg .who { font-size: 15px; font-weight: 700; letter-spacing: 0; text-transform: none;
+              color: var(--ink); margin-bottom: 6px; }
+  .msg .cid { font-size: 11px; font-weight: 400; letter-spacing: 0.06em; color: var(--muted);
+              margin-left: 8px; }
   .msg.held { background: #f1f0ea; border-style: dashed; color: #8d8d84; }
   .msg.held .who { color: #8d8d84; }
+  .msg.held .cid { color: #a5a59c; }
   .held-note { font-style: italic; }
 
   .stats { display: flex; flex-wrap: wrap; gap: 34px; align-items: flex-end; }
@@ -272,12 +275,15 @@ function panelDispatch(state) {
     + esc(c.discount_pct) + " percent off " + esc(c.offer_applies_to) + ".</p>";
   html += '<div class="msgs">';
   c.treated.forEach(function (row) {
-    html += '<div class="msg"><div class="who">' + esc(row.customer_id) + "</div>"
+    html += '<div class="msg"><div class="who">'
+      + esc(row.customer_name || row.customer_id)
+      + '<span class="cid">' + esc(row.customer_id) + "</span></div>"
       + '<div class="hindi" style="font-size:18px">' + esc(row.body) + "</div></div>";
   });
   c.control.forEach(function (row) {
-    html += '<div class="msg held"><div class="who">' + esc(row.customer_id)
-      + " &middot; control</div>"
+    html += '<div class="msg held"><div class="who">'
+      + esc(row.customer_name || row.customer_id)
+      + '<span class="cid">' + esc(row.customer_id) + "</span> &middot; control</div>"
       + '<div class="held-note">no message, on purpose. This is how we know it was us.</div>'
       + "</div>";
   });

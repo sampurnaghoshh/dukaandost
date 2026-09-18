@@ -282,6 +282,7 @@ One merchant (a tea stall), ~400 customers, 18 months of UPI transactions. Quali
 - Festival spikes (Diwali, Holi)
 - A cohort of ~12 regulars who lapse three weeks before "today"
 - Basket affinity: tea buyers rarely add snacks
+- An Indian first name and surname initial per customer, stored on the customers table. The name is resolved at dispatch and nowhere earlier: triage, the simulator and the holdout all work on ids.
 - Messy Hinglish item names on purpose: `chai`, `CHAI 10`, `tea spl`, `चाय`. The LLM resolving these to one product is a real capability worth showing.
 - Realistic ticket sizes for a Bengaluru tea stall (₹10 to ₹60)
 

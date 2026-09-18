@@ -24,61 +24,73 @@
   "detail": [
     {
       "customer_id": "C0073",
+      "name": "Ramesh N.",
       "last_visit": "2026-08-24",
       "avg_monthly_spend": 766.0
     },
     {
       "customer_id": "C0080",
+      "name": "Rajesh R.",
       "last_visit": "2026-08-25",
       "avg_monthly_spend": 757.5
     },
     {
       "customer_id": "C0111",
+      "name": "Bhavana R.",
       "last_visit": "2026-08-24",
       "avg_monthly_spend": 809.0
     },
     {
       "customer_id": "C0137",
+      "name": "Usha A.",
       "last_visit": "2026-08-24",
       "avg_monthly_spend": 723.67
     },
     {
       "customer_id": "C0139",
+      "name": "Kavya S.",
       "last_visit": "2026-08-24",
       "avg_monthly_spend": 793.67
     },
     {
       "customer_id": "C0142",
+      "name": "Anita D.",
       "last_visit": "2026-08-25",
       "avg_monthly_spend": 807.0
     },
     {
       "customer_id": "C0164",
+      "name": "Kiran H.",
       "last_visit": "2026-08-25",
       "avg_monthly_spend": 808.33
     },
     {
       "customer_id": "C0228",
+      "name": "Rajesh N.",
       "last_visit": "2026-08-23",
       "avg_monthly_spend": 779.0
     },
     {
       "customer_id": "C0241",
+      "name": "Suresh D.",
       "last_visit": "2026-08-25",
       "avg_monthly_spend": 790.5
     },
     {
       "customer_id": "C0252",
+      "name": "Raghav H.",
       "last_visit": "2026-08-23",
       "avg_monthly_spend": 767.67
     },
     {
       "customer_id": "C0268",
+      "name": "Balaji T.",
       "last_visit": "2026-08-25",
       "avg_monthly_spend": 808.83
     },
     {
       "customer_id": "C0329",
+      "name": "Vandana H.",
       "last_visit": "2026-08-26",
       "avg_monthly_spend": 774.17
     }

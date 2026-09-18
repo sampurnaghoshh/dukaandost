@@ -32,14 +32,15 @@ def new_campaign_id() -> str:
 
 def launch(memory: sqlite3.Connection, merchant_id: str, chosen: dict, shop_name: str,
            customer_ids: list, customer_facts: dict | None = None,
-           campaign_id: str | None = None, seed: int = holdout.DEFAULT_SEED) -> dict:
+           campaign_id: str | None = None, seed: int = holdout.DEFAULT_SEED,
+           customer_names: dict | None = None) -> dict:
     """Assign, record the prediction, render the messages. Everything before the waiting."""
     campaign_id = campaign_id or new_campaign_id()
 
     assignment = holdout.assign_and_save(memory, campaign_id, customer_ids, seed=seed)
     record = store.record_campaign(memory, campaign_id, merchant_id, chosen)
     sent = dispatch.dispatch(memory, campaign_id, assignment, chosen, shop_name,
-                             customer_facts)
+                             customer_facts, customer_names=customer_names)
 
     return {
         "campaign_id": campaign_id,
