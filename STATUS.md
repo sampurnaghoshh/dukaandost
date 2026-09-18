@@ -82,6 +82,11 @@ $env:LLM_MODE = "replay"
 python -m scripts.run_campaigns --campaigns 6
 ```
 
+**Rehearsing the full flow adds campaigns.** Every real approval through
+`/campaign/launch` writes another campaign, so if you practise the whole loop, run this step
+again before you present. The preflight prints the count. The tunnel probe in
+`demo_check` does not add one, it sends `approved: false` on purpose.
+
 **Know what this does to panel two.** With six campaigns measured, the winback row reads
 about 302, 397, 278 rather than the day one 148.03, 186.62, 107.02, because the agent has
 learned this shop responds harder than the priors assumed. Both are correct. If you would
@@ -158,8 +163,37 @@ instruction said not to do.
 
 **A second, smaller blocker worth recording:** `pip install cognee` pulls roughly 175 MB of
 wheels, including `lancedb` at 104 MB and `pylance` at 46 MB. On the connection here that ran
-at 260 kB/s and did not finish inside the hour, twice. Even with an embedding provider, this
-is not something to install for the first time on demo morning.
+at 260 kB/s and took well over half the timebox. Even with an embedding provider, this is not
+something to install for the first time on demo morning.
+
+**It did finish, in the end.** A background install I thought I had cancelled completed after
+the hour, so **cognee 1.5.4 is now in the venv**. That is good news for the evidence and
+changes nothing about the conclusion: with cognee genuinely importable, the readiness probe
+reports what it actually finds.
+
+```
+installed    True
+llm          sarvam-105b over the OpenAI compatible endpoint, via litellm
+embeddings   None
+ready        False
+blockers     ['no embedding provider. Sarvam has no embeddings endpoint, so cognify has
+              no way to vectorise anything without a second provider']
+```
+
+So the blocker is confirmed against the real library rather than inferred from its
+dependency list. Asking for the cognee backend now exercises the fallback for real:
+
+```
+asked for cognee, got: sqlite
+note : sqlite, because cognee could not start: no embedding provider. Sarvam has no
+       embeddings endpoint, so cognify has no way to vectorise anything without a
+       second provider
+```
+
+Core dependency versions did not move: httpx 0.28.1, fastapi 0.141.1, pydantic 2.13.5, all
+as before. The full suite still passes. cognee adds about fifty seconds to a full test run
+and a dozen deprecation warnings of its own, which is the price of having it sitting there
+unused.
 
 ### 2. What is real
 
@@ -195,11 +229,13 @@ a real migration, `ALTER TABLE` on a database that predates the column, since
 
 ### 3. What is not real, plainly
 
-**`CogneeGraph` has never executed.** The class is written against cognee's documented
-`add()` and `cognify()` API, but cognee is not installed here, so not one line of it has run.
-It may well be wrong about the exact call shape. It is unexercised code, and the only reason
-it is committed rather than deleted is that the interface and the readiness probe around it
-are real and tested, and the fallback is proven.
+**`CogneeGraph` has never ingested anything.** cognee is installed, so `__init__` really
+runs and really raises `CogneeUnavailable` on the missing embedding provider, which is the
+path the fallback depends on and is now proven. But `_add()`, the method that would put a
+campaign into the graph, has never executed. It is written against cognee's documented
+`add()` and `cognify()` API and may be wrong about the exact call shape. cognee 1.5.4 also
+warns on import that its 1.0 release introduced a new `remember` and `recall` API alongside
+the old one, so that code would want rechecking before anyone relies on it.
 
 Nothing depends on it. The test that would compare the two backends **skips**, with the
 reason printed, rather than passing on a technicality:
@@ -228,8 +264,9 @@ match version of it, which is enough for one merchant and not enough for forty m
 - A test asserts `triage.py`, `generate.py`, `simulate.py`, `measure.py` and `holdout.py`
   contain neither `memory.graph` nor `MEMORY_BACKEND`, so the backend cannot move a number.
 - A test asserts the learned response scale is identical with either backend set.
-- **cognee is deliberately not in `requirements.txt`.** Adding a 175 MB dependency that
-  cannot run would make a fresh clone slower and no more capable.
+- **cognee is deliberately not in `requirements.txt`,** even though it is in this venv.
+  Adding a 175 MB dependency that cannot run would make a fresh clone slower and no more
+  capable. Nothing on the default path imports it, so it costs the demo nothing.
 
 If asked on stage: the memory layer is behind an interface with a graph backend written
 against it, the content is already there, and the thing standing between us and a live
@@ -240,7 +277,7 @@ paid provider the night before.
 
 ```
 $ python -m pytest tests/ -q
-209 passed, 1 skipped in 64.50s
+209 passed, 1 skipped in 114.77s
 ```
 
 ---
