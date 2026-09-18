@@ -123,17 +123,31 @@
            background: var(--white); border: 1px solid var(--paytm-blue);
            border-radius: var(--radius); padding: 7px 14px; color: var(--navy); }
 
-  .msgs { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-          gap: 10px; }
-  .msg { border: 1px solid var(--line); border-radius: var(--radius); padding: 11px 13px;
-         background: var(--white); border-left: var(--rule) solid var(--paytm-blue); }
-  .msg .who { font-size: 14px; font-weight: 600; color: var(--navy); margin-bottom: 5px; }
-  .msg .cid { font-size: 11px; font-weight: 400; color: var(--muted); margin-left: 7px; }
-  .msg.held { background: var(--grey); border-style: dashed;
-              border-left-color: var(--faint); color: var(--faint); }
-  .msg.held .who { color: var(--faint); }
-  .msg.held .cid { color: var(--faint); }
-  .held-note { font-style: italic; font-size: 13px; }
+  /* Dispatch. The ten treated are deliberately identical, so they are quiet and uniform.
+     The two held back carry the point of the panel, so they get the weight. */
+  .msgs { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+          gap: 8px; }
+  .msg { border: 1px solid var(--line); border-radius: var(--radius); padding: 10px;
+         background: var(--white); }
+  .msg .who { font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 4px; }
+  .msg .cid { font-size: 11px; font-weight: 400; color: var(--faint); margin-left: 6px; }
+  .msg .hindi { font-size: 13px; line-height: 1.5; color: var(--navy); }
+
+  /* Held back: dashed, tinted, and navy text, so nobody reads them as the faint ones. */
+  .msg.held { background: var(--sky-wash); border: 1px dashed var(--navy); color: var(--navy); }
+  .msg.held .who { color: var(--navy); font-weight: 700; }
+  .msg.held .cid { color: var(--muted); }
+  .held-note { font-style: italic; font-size: 13px; color: var(--navy); }
+
+  /* The chart legend, inline with the panel title. */
+  .chart-legend { float: right; font-weight: 400; color: var(--muted); font-size: 12px; }
+  .chart-legend .key { margin-left: 14px; white-space: nowrap; }
+  .chart-legend .sw { display: inline-block; width: 14px; margin-right: 5px;
+                      vertical-align: middle; }
+  .chart-legend .line { border-top: 3px solid var(--paytm-blue); }
+  .chart-legend .dash { border-top: 2px dashed var(--navy); }
+  .chart-legend .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--white);
+                       border: 2px solid var(--navy); }
 
   /* Panel five. */
   .big { font-size: 19px; font-weight: 700; color: var(--navy); letter-spacing: -0.015em; }
@@ -165,7 +179,7 @@
   <section id="s3"><h2><span class="n">3</span>The call</h2><div id="p3"></div></section>
   <section id="s4"><h2><span class="n">4</span>Dispatch</h2><div id="p4"></div></section>
   <section id="s5"><h2><span class="n">5</span>Measurement</h2><div id="p5"></div></section>
-  <section id="s6"><h2><span class="n">6</span>Learning</h2><div id="p6"></div></section>
+  <section id="s6"><h2><span class="n">6</span>Learning<span id="legend6"></span></h2><div id="p6"></div></section>
 
 </div>
 
@@ -184,6 +198,7 @@ var C = {
   sky: colour("--sky"),
   muted: colour("--muted"),
   red: colour("--red"),
+  white: colour("--white"),
   grid: colour("--chart-grid"),
   zero: colour("--chart-zero")
 };
@@ -350,7 +365,7 @@ function panelDispatch(state) {
     html += '<div class="msg"><div class="who">'
       + esc(row.customer_name || row.customer_id)
       + '<span class="cid">' + esc(row.customer_id) + "</span></div>"
-      + '<div class="hindi" style="font-size:18px">' + esc(row.body) + "</div></div>";
+      + '<div class="hindi">' + esc(row.body) + "</div></div>";
   });
   c.control.forEach(function (row) {
     html += '<div class="msg held"><div class="who">'
@@ -413,97 +428,92 @@ function panelLearning(state) {
 
 function chartSvg(learning) {
   var series = learning.series;
-  var W = 860, H = 340, L = 66, R = 24, T = 22, B = 52;
+  var W = 1060, H = 270, L = 56, R = 20, T = 16, B = 34;
   var truth = learning.hidden_truth;
 
-  var values = [];
-  series.forEach(function (row) {
-    if (row.predicted_uplift !== null) { values.push(row.predicted_uplift); }
-    if (row.actual_uplift !== null) { values.push(row.actual_uplift); }
-  });
-  if (truth !== null && truth !== undefined) { values.push(truth); }
-  var lo = Math.min.apply(null, values.concat([0]));
-  var hi = Math.max.apply(null, values.concat([0.1]));
-  var pad = (hi - lo) * 0.15 || 0.05;
-  lo -= pad; hi += pad;
+  /* A fixed domain rather than one fitted to the data. Campaign two measured minus two
+     tenths from a two person control group, and letting that set the floor squashed the
+     believed uplift into a flat line, which is the one thing this chart exists to show.
+     Anything outside the domain is drawn on the axis and labelled with its true value. */
+  var LO = -0.10, HI = 0.45;
+  var clamp = function (v) { return Math.max(LO, Math.min(HI, v)); };
 
   var n = series.length;
   var x = function (i) { return L + (n === 1 ? (W - L - R) / 2 : (W - L - R) * i / (n - 1)); };
-  var y = function (v) { return T + (H - T - B) * (1 - (v - lo) / (hi - lo)); };
+  var y = function (v) { return T + (H - T - B) * (1 - (clamp(v) - LO) / (HI - LO)); };
 
   var svg = '<svg viewBox="0 0 ' + W + " " + H + '" width="100%" role="img" '
     + 'aria-label="believed uplift climbing toward the hidden truth" '
-    + 'style="max-width:100%;height:auto">';
+    + 'style="max-width:100%;height:auto;display:block">';
 
-  // horizontal guides
-  [0, 0.1, 0.2, 0.3, 0.4].forEach(function (v) {
-    if (v < lo || v > hi) { return; }
+  [-0.10, 0, 0.10, 0.20, 0.30, 0.40].forEach(function (v) {
     svg += '<line x1="' + L + '" y1="' + y(v) + '" x2="' + (W - R) + '" y2="' + y(v)
       + '" stroke="' + C.grid + '" stroke-width="1"/>'
-      + '<text x="' + (L - 10) + '" y="' + (y(v) + 5)
-      + '" text-anchor="end" font-size="14" fill="' + C.muted + '">' + v.toFixed(2) + "</text>";
+      + '<text x="' + (L - 9) + '" y="' + (y(v) + 4)
+      + '" text-anchor="end" font-size="12" fill="' + C.muted + '">' + v.toFixed(2) + "</text>";
   });
 
-  // zero line, so a negative measurement is obviously negative
-  if (lo < 0 && hi > 0) {
-    svg += '<line x1="' + L + '" y1="' + y(0) + '" x2="' + (W - R) + '" y2="' + y(0)
-      + '" stroke="' + C.zero + '" stroke-width="2"/>';
-  }
+  /* Zero, so a negative measurement is unmistakably negative. */
+  svg += '<line x1="' + L + '" y1="' + y(0) + '" x2="' + (W - R) + '" y2="' + y(0)
+    + '" stroke="' + C.zero + '" stroke-width="1.5"/>';
 
-  // the hidden truth, a flat reference line
+  /* The hidden truth, a reference rather than the headline, so it is not the boldest mark. */
   if (truth !== null && truth !== undefined) {
     svg += '<line x1="' + L + '" y1="' + y(truth) + '" x2="' + (W - R) + '" y2="' + y(truth)
-      + '" stroke="' + C.navy + '" stroke-width="2.5" stroke-dasharray="9 6"/>'
-      + '<text x="' + (W - R) + '" y="' + (y(truth) - 10)
-      + '" text-anchor="end" font-size="15" font-weight="700" fill="' + C.navy + '">'
-      + "hidden truth " + truth.toFixed(2) + ", the agent never sees it</text>";
+      + '" stroke="' + C.navy + '" stroke-width="1.5" stroke-dasharray="7 5"/>'
+      + '<text x="' + (W - R) + '" y="' + (y(truth) - 7)
+      + '" text-anchor="end" font-size="12" font-weight="400" fill="' + C.muted + '">'
+      + "hidden truth " + truth.toFixed(2) + "</text>";
   }
 
-  // measured lift per campaign, points only, nothing smoothed or hidden
-  series.forEach(function (row, i) {
-    if (row.actual_uplift === null || row.actual_uplift === undefined) { return; }
-    var negative = row.actual_uplift < 0;
-    svg += '<circle cx="' + x(i) + '" cy="' + y(row.actual_uplift) + '" r="7" fill="'
-      + (negative ? C.red : C.sky) + '" stroke="' + C.navy + '" stroke-width="2"/>';
-    if (negative) {
-      svg += '<text x="' + x(i) + '" y="' + (y(row.actual_uplift) + 24)
-        + '" text-anchor="middle" font-size="13" fill="' + C.red + '">measured below zero</text>';
-    }
-  });
-
-  // believed uplift, the climbing line
+  /* The believed uplift, the claim, in blue. */
   var path = series.map(function (row, i) {
     return (i ? "L" : "M") + x(i) + " " + y(row.predicted_uplift);
   }).join(" ");
-  svg += '<path d="' + path + '" fill="none" stroke="' + C.blue + '" stroke-width="4" '
+  svg += '<path d="' + path + '" fill="none" stroke="' + C.blue + '" stroke-width="3" '
     + 'stroke-linejoin="round"/>';
+
+  /* Measured lift, outlined circles, red when it came out below zero. */
+  series.forEach(function (row, i) {
+    if (row.actual_uplift === null || row.actual_uplift === undefined) { return; }
+    var value = row.actual_uplift;
+    var below = value < 0;
+    var offScale = value < LO || value > HI;
+    var edge = below ? C.red : C.navy;
+    svg += '<circle cx="' + x(i) + '" cy="' + y(value) + '" r="5" fill="' + C.white
+      + '" stroke="' + edge + '" stroke-width="2"/>';
+    if (offScale) {
+      /* Pinned to the axis, with the number it really was written beside it. */
+      svg += '<text x="' + (x(i) + 10) + '" y="' + (y(value) + 4)
+        + '" font-size="12" fill="' + C.red + '">' + value.toFixed(2) + "</text>";
+    }
+  });
+
+  /* Believed uplift dots last, so the claim sits on top. */
   series.forEach(function (row, i) {
     svg += '<circle cx="' + x(i) + '" cy="' + y(row.predicted_uplift)
-      + '" r="6" fill="' + C.blue + '"/>';
+      + '" r="4" fill="' + C.blue + '"/>';
   });
 
-  // campaign labels
   series.forEach(function (row, i) {
-    svg += '<text x="' + x(i) + '" y="' + (H - B + 26)
-      + '" text-anchor="middle" font-size="15" fill="' + C.muted + '">' + row.sequence
+    svg += '<text x="' + x(i) + '" y="' + (H - B + 20)
+      + '" text-anchor="middle" font-size="12" fill="' + C.muted + '">' + row.sequence
       + "</text>";
   });
-  svg += '<text x="' + ((L + W - R) / 2) + '" y="' + (H - 8)
-    + '" text-anchor="middle" font-size="14" fill="' + C.muted + '">campaign</text>';
-
-  // legend
-  svg += '<g font-size="15">'
-    + '<circle cx="' + (L + 6) + '" cy="' + (T + 4) + '" r="6" fill="' + C.blue + '"/>'
-    + '<text x="' + (L + 20) + '" y="' + (T + 9) + '" fill="' + C.navy
-    + '">believed uplift</text>'
-    + '<circle cx="' + (L + 190) + '" cy="' + (T + 4) + '" r="6" fill="' + C.sky
-    + '" stroke="' + C.navy + '" stroke-width="2"/>'
-    + '<text x="' + (L + 204) + '" y="' + (T + 9) + '" fill="' + C.navy
-    + '">measured lift</text>'
-    + "</g>";
+  svg += '<text x="' + ((L + W - R) / 2) + '" y="' + (H - 4)
+    + '" text-anchor="middle" font-size="12" fill="' + C.muted + '">campaign</text>';
 
   svg += "</svg>";
   return svg;
+}
+
+/* The legend sits up on the panel title rather than floating over the plot. */
+function chartLegend() {
+  return '<span class="chart-legend">'
+    + '<span class="key"><i class="sw line"></i>believed uplift</span>'
+    + '<span class="key"><i class="sw dash"></i>hidden truth</span>'
+    + '<span class="key"><i class="sw dot"></i>measured lift</span>'
+    + "</span>";
 }
 
 /* wiring ---------------------------------------------------------------- */
@@ -518,6 +528,10 @@ function render(state) {
   el("p4").innerHTML = panelDispatch(state);
   el("p5").innerHTML = panelMeasure(state);
   el("p6").innerHTML = panelLearning(state);
+  // Guarded: render runs every two seconds, and a missing node here would throw and take
+  // the whole page down rather than losing one legend.
+  var legend = el("legend6");
+  if (legend) { legend.innerHTML = state.learning.series.length ? chartLegend() : ""; }
 
   var button = el("playback");
   if (button && state.call && state.call.audio_url) {
