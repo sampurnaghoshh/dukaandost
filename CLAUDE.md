@@ -46,8 +46,6 @@ When you are asked to add something and it is not on the critical path below, sa
 **Redeem the hackathon voucher first thing.** Organisers issued one month of n8n Cloud:
 
 ```
-2026-COMMUNITY-HACKATHON-INDIA-18D35A55
-```
 
 Redemption guide: `https://n8n.notion.site/voucher-code`. It expires one week after the event, so redeem tonight.
 
